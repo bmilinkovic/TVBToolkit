@@ -396,7 +396,7 @@ def cluster_brain_states(
         Clustering backend. ``"sklearn"`` matches Brain-Act behaviour and is
         the recommended default.
     """
-    patterns = np.asarray(patterns, dtype=float)
+    patterns = np.asarray(patterns)
     if patterns.ndim != 2:
         raise ValueError(f"Expected patterns shape (time, edges), got {patterns.shape}")
     if patterns.shape[0] == 0:
@@ -407,6 +407,12 @@ def cluster_brain_states(
     if backend == "sklearn":
         if KMeans is None:
             raise ImportError("scikit-learn is required for backend='sklearn'.")
+        # Preserve float32/float64 and C-order when possible so disk-backed
+        # memmaps can be consumed without an eager float64 copy.
+        if patterns.dtype not in (np.float32, np.float64):
+            patterns = patterns.astype(np.float32, copy=False)
+        if not patterns.flags.c_contiguous:
+            patterns = np.ascontiguousarray(patterns)
         km = KMeans(
             n_clusters=k_eff,
             random_state=int(random_seed),
@@ -419,6 +425,7 @@ def cluster_brain_states(
         return labels, centers
 
     if backend == "scipy":
+        patterns = np.asarray(patterns, dtype=float)
         best_labels = None
         best_centers = None
         best_inertia = np.inf
