@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>tvbtoolkit.phiid.ccs.once</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-dimsu</string>
+    <string>/Users/borjan/CNRS/projects/TVBToolkit/scripts/run_empirical_bold_ccs_full_once.sh</string>
+    <string>12</string>
+    <string>/Users/borjan/CNRS/projects/TVBToolkit/results/phiid_empirical_bold/logs/tvbtoolkit.phiid.ccs.once.log</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/borjan/CNRS/projects/TVBToolkit</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

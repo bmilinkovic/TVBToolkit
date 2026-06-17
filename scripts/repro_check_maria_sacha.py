@@ -48,7 +48,7 @@ def main() -> None:
     conn_76 = PAPER_ROOT / 'TVB' / 'tvb_model_reference' / 'data' / 'connectivity' / 'connectivity_76.zip'
     cfg = WholeBrainConfig(
         model_family='adex_zerlaut',
-        zerlaut_order=1,
+        zerlaut_order=2,  # second-order: matches TVBSim default
         simulation_length_ms=4000.0,
         dt_ms=0.1,
         connectivity_zip=str(conn_76),

@@ -1,13 +1,55 @@
+# Python / tooling caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# Virtual environments
 .venv/
+venv/
+env/
+.env
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
 
 # Local/runtime artifacts
+.cache/
 .tvb-temp/
-notebooks/outputs/
-results/
+hpc/logs/
 
-# Local datasets
+# Generated analysis outputs and figures
+notebooks/outputs/
+notebooks/figs/
+results/
+figures/
+
+# Local datasets / external reference data
 data/
+external/
+projects/
+
+# Large generated scientific artifacts
+*.npz
+*.npy
+*.mat
+*.h5
+*.hdf5
+*.nii
+*.nii.gz
+*.pkl
+*.pickle
+*.joblib
+
+# Logs and scheduler files
+*.log
+*.out
+*.err
+slurm-*.out

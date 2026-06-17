@@ -193,6 +193,8 @@ def run_adex_network_simulation(
     iext_hz: float = 0.5,
     input_hz: float = 0.0,
     plat_dur_ms: float = 0.0,
+    external_rate_hz_trace: np.ndarray | None = None,
+    external_rate_dt_ms: float | None = None,
     parameter_overrides: dict[str, Any] | None = None,
     split_leak: bool = False,
     psych: bool = False,
@@ -373,7 +375,21 @@ def run_adex_network_simulation(
         g_exc.gK = gk_e * nS
         g_exc.gNa = gna_e * nS
 
-    if amp_stim > 0:
+    ext_rate_trace = None
+    ext_rate_dt_ms = float(dt_ms)
+    if external_rate_hz_trace is not None:
+        ext_rate_trace = np.asarray(external_rate_hz_trace, dtype=float).reshape(-1)
+        if ext_rate_trace.size == 0:
+            raise ValueError("external_rate_hz_trace must be non-empty when provided.")
+        if not np.all(np.isfinite(ext_rate_trace)):
+            raise ValueError("external_rate_hz_trace contains non-finite values.")
+        ext_rate_trace = np.maximum(ext_rate_trace, 0.0)
+        ext_rate_dt_ms = float(dt_ms if external_rate_dt_ms is None else external_rate_dt_ms)
+        if ext_rate_dt_ms <= 0.0:
+            raise ValueError("external_rate_dt_ms must be > 0.")
+        external_input = TimedArray(ext_rate_trace * Hz, dt=ext_rate_dt_ms * ms)
+        p_ed = PoissonGroup(n2, rates="external_input(t)")
+    elif amp_stim > 0:
         p_ed = PoissonGroup(n2, rates="input_stim(t)")
     else:
         p_ed = PoissonGroup(n2, rates=float(iext_hz) * Hz)
@@ -415,7 +431,10 @@ def run_adex_network_simulation(
     ras_inh = np.array([np.asarray(sp_inh.t / ms), np.asarray([i + n2 for i in sp_inh.i])], dtype=object)
     ras_exc = np.array([np.asarray(sp_exc.t / ms), np.asarray(sp_exc.i)], dtype=object)
 
-    if amp_stim > 0:
+    if ext_rate_trace is not None:
+        time_array_ext = np.arange(ext_rate_trace.size, dtype=float) * ext_rate_dt_ms
+        input_bin = bin_array(ext_rate_trace, float(bin_width_ms), time_array_ext)
+    elif amp_stim > 0:
         time_array = np.arange(int(float(time_ms) / float(dt_ms))) * float(dt_ms)
         input_bin = bin_array(np.asarray(test_input), float(bin_width_ms), time_array)
     else:

@@ -25,7 +25,7 @@ def main() -> None:
         simulation_length_ms=5000.0,
         monitor_mode="temporal_average",
         temporal_average_period_ms=1.0,
-        zerlaut_order=1,
+        zerlaut_order=2,  # second-order: matches TVBSim default
     )
 
     # Demo subset: one subject per cohort

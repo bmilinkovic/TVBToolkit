@@ -471,6 +471,8 @@ def run_mf_ode(
     stim_dur_ms: float = 120.0,
     sigma_ou_hz: float | None = None,
     tau_ou_ms: float | None = None,
+    external_drive_hz: np.ndarray | None = None,
+    external_drive_dt_ms: float | None = None,
     transient_ms: float = 1000.0,
     init_state: tuple[float, float] | None = None,
 ) -> dict[str, np.ndarray]:
@@ -488,6 +490,10 @@ def run_mf_ode(
     ----------
     sigma_ou_hz : OU noise amplitude in Hz (default = p.sigma_ou_hz = 0.05 Hz).
         Must be << barrier height (~0.5 Hz) to keep the system in the AI state.
+    external_drive_hz : optional explicit afferent-drive trace (Hz), shape (T,).
+        When provided, this replaces the internal OU-generated drive.
+    external_drive_dt_ms : sampling step of ``external_drive_hz`` in ms.
+        Defaults to ``dt_ms``.
     init_state  : (ve0_hz, vi0_hz) initial firing rates (Hz).  Default (2, 2) Hz
         which falls into the AI-state basin (~6 Hz for wake parameters).
 
@@ -523,11 +529,30 @@ def run_mf_ode(
     vi_arr = np.empty(n)
     W_arr  = np.empty(n)
 
+    drive_trace_khz = None
+    if external_drive_hz is not None:
+        drive_hz = np.asarray(external_drive_hz, dtype=float).reshape(-1)
+        if drive_hz.size == 0:
+            raise ValueError("external_drive_hz must be non-empty when provided.")
+        if not np.all(np.isfinite(drive_hz)):
+            raise ValueError("external_drive_hz contains non-finite values.")
+        drive_hz = np.maximum(drive_hz, 0.0)
+        trace_dt_ms = float(dt_ms if external_drive_dt_ms is None else external_drive_dt_ms)
+        if trace_dt_ms <= 0.0:
+            raise ValueError("external_drive_dt_ms must be > 0.")
+        t_trace = np.arange(drive_hz.size, dtype=float) * trace_dt_ms
+        t_target = np.arange(n, dtype=float) * float(dt_ms)
+        drive_interp_hz = np.interp(t_target, t_trace, drive_hz, left=float(drive_hz[0]), right=float(drive_hz[-1]))
+        drive_trace_khz = drive_interp_hz * 1e-3
+
     xi = 0.0   # OU state (kHz units)
     for i in range(n):
-        # OU step: xi tracks fluctuations in external drive (kHz)
-        xi = xi * (1.0 - dt_ms / tau_ou_ms) + sigma_khz * math.sqrt(dt_ms / tau_ou_ms) * rng.standard_normal()
-        ve_ext = max(drive_khz + xi + stim_on[i], 0.0)   # kHz
+        if drive_trace_khz is None:
+            # OU step: xi tracks fluctuations in external drive (kHz)
+            xi = xi * (1.0 - dt_ms / tau_ou_ms) + sigma_khz * math.sqrt(dt_ms / tau_ou_ms) * rng.standard_normal()
+            ve_ext = max(drive_khz + xi + stim_on[i], 0.0)   # kHz
+        else:
+            ve_ext = max(float(drive_trace_khz[i]) + stim_on[i], 0.0)   # kHz
 
         Fe = float(_tf_internal(max(ve, 0.0), max(vi, 0.0), W, ve_ext, p, "exc"))
         Fi = float(_tf_internal(max(ve, 0.0), max(vi, 0.0), W, ve_ext, p, "inh"))

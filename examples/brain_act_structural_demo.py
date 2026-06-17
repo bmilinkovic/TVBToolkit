@@ -98,7 +98,7 @@ def main() -> None:
         sid = qc[cohort]["subject_id"]
         cfg = WholeBrainConfig(
             model_family="adex_zerlaut",
-            zerlaut_order=1,
+            zerlaut_order=2,  # second-order: matches TVBSim default
             simulation_length_ms=args.sim_ms,
             dt_ms=0.25,
             monitor_mode="temporal_average",

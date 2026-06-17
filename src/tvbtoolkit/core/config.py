@@ -23,7 +23,7 @@ class WholeBrainConfig:
     model_family: Literal["adex_zerlaut", "generic2d"] = "adex_zerlaut"
     zerlaut_matteo: bool = False
     zerlaut_gk_gna: bool = False
-    zerlaut_order: Literal[1, 2] = 1
+    zerlaut_order: Literal[1, 2] = 2
     stochastic_integrator: bool = True
     # Monitor selection:
     # - None: keep legacy monitor settings from parameter schema

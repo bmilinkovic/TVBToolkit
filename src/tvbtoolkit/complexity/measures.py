@@ -93,7 +93,7 @@ def _lz_complexity_binary_1d(bits: np.ndarray) -> int:
 
 
 
-def lzc_multichannel(x: np.ndarray) -> float:
+def lzc_multichannel(x: np.ndarray, *, shuffle_seed: int | None = 0) -> float:
     """Compute normalized multichannel Lempel-Ziv complexity.
 
     The pipeline mirrors TVBSim ``entropy_measures.calculate_LempelZiv``:
@@ -104,7 +104,7 @@ def lzc_multichannel(x: np.ndarray) -> float:
        envelope.
     3. **Flatten**: reshape ``(time, channels)`` → 1D in time-major order.
     4. **LZ76**: score the binary sequence with an LZ76 parser.
-    5. **Normalize**: divide by the LZ76 score of a randomly shuffled copy.
+    5. **Normalize**: divide by the LZ76 score of a shuffled copy.
 
     Parameters
     ----------
@@ -112,6 +112,10 @@ def lzc_multichannel(x: np.ndarray) -> float:
         Signal matrix with shape ``(time, channels)``.
         Time is represented as discrete bins/samples; physical units depend on
         the simulation sampling interval used upstream.
+    shuffle_seed : int or None, default=0
+        Seed for the surrogate shuffle used in normalization.  The default is
+        deterministic so HPC reruns are exactly reproducible.  Pass ``None``
+        to use non-deterministic entropy from NumPy.
 
     Returns
     -------
@@ -126,7 +130,8 @@ def lzc_multichannel(x: np.ndarray) -> float:
     seq = b.reshape(-1)
     c = _lz_complexity_binary_1d(seq)
     shuffled = np.copy(seq)
-    np.random.shuffle(shuffled)
+    rng = np.random.default_rng(shuffle_seed)
+    rng.shuffle(shuffled)
     c_ref = max(_lz_complexity_binary_1d(shuffled), 1)
     return float(c / c_ref)
 
@@ -524,8 +529,19 @@ def pci_casali_like_multi_trial(
             raise ValueError(
                 f"Each trial must be 2D (time×sources or sources×time). Got shape {t_arr.shape}."
             )
-        # _coerce_channels_time returns (channels, time) — reuse the existing helper.
-        coerced.append(_coerce_channels_time(t_arr, stimulation_index=onset))
+        # If callers pass pre-cut peri-stimulus windows, the time axis has
+        # exactly 2*nbins_analysis samples and onset is the midpoint.  Detect
+        # that case explicitly because Brain-Act has 90 regions and only ~76
+        # PCI bins; a "longer axis is time" heuristic would otherwise flip
+        # source/time orientation incorrectly.
+        if onset == nbins_analysis and t_arr.shape[1] == 2 * nbins_analysis:
+            coerced.append(t_arr)
+        elif onset == nbins_analysis and t_arr.shape[0] == 2 * nbins_analysis:
+            coerced.append(t_arr.T)
+        else:
+            # _coerce_channels_time returns (channels, time) — reuse the
+            # existing helper for full-length trials.
+            coerced.append(_coerce_channels_time(t_arr, stimulation_index=onset))
 
     n_trials = len(coerced)
     n_sources = coerced[0].shape[0]

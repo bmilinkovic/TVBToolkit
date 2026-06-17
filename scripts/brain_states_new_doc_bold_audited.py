@@ -67,12 +67,13 @@ except ModuleNotFoundError:  # pragma: no cover
     )
 
 
-COHORTS = ("control", "emcs", "mcs", "uws")
+COHORTS = ("control", "emcs", "mcs", "uws", "coma")
 PALETTE = {
-    "control": "#2E86AB",
-    "emcs": "#4DAF4A",
-    "mcs": "#E67E22",
-    "uws": "#C0392B",
+    "control": "#5B7FA3",
+    "emcs": "#7EA172",
+    "mcs": "#D88C4A",
+    "uws": "#B65D4A",
+    "coma": "#6E5A7E",
 }
 
 FILE_SPECS = (
@@ -146,6 +147,24 @@ FILE_SPECS = (
         "fc_path": "FC_send/DoC_chronic_sedated_MCS_matched.mat",
         "fc_var": "DoC_chronic_sedated_MCS",
         "sc_path": "SC_send/norm/anon/DoC_MCS_sedated_SC_matched.mat",
+        "sc_var": "SC",
+    },
+    {
+        "cohort": "coma",
+        "stage": "acute",
+        "sedation": "non_sedated",
+        "fc_path": "FC_send/DoC_acute_coma_matched.mat",
+        "fc_var": "DoC_acute_coma",
+        "sc_path": "SC_send/norm/anon/DoC_acute_COMA_SC_matched.mat",
+        "sc_var": "SC",
+    },
+    {
+        "cohort": "coma",
+        "stage": "acute",
+        "sedation": "sedated",
+        "fc_path": "FC_send/DoC_acute_sedated_COMA_matched.mat",
+        "fc_var": "DoC_acute_sedated_coma",
+        "sc_path": "SC_send/norm/anon/DoC_acute_sedated_COMA_SC_matched.mat",
         "sc_var": "SC",
     },
     {

@@ -267,7 +267,7 @@ def run_dual_domain_job(
         model_family="adex_zerlaut",
         zerlaut_matteo=False,
         zerlaut_gk_gna=False,
-        zerlaut_order=1,
+        zerlaut_order=2,  # second-order: matches TVBSim default (adds C_ee, C_ei, C_ii)
         stochastic_integrator=True,
         monitor_mode="temporal_average",
         temporal_average_period_ms=float(rate_monitor_period_ms),
@@ -495,7 +495,7 @@ def run_simulation_only_job(
         model_family="adex_zerlaut",
         zerlaut_matteo=False,
         zerlaut_gk_gna=False,
-        zerlaut_order=1,
+        zerlaut_order=2,  # second-order: matches TVBSim default (adds C_ee, C_ei, C_ii)
         stochastic_integrator=True,
         monitor_mode="temporal_average",
         temporal_average_period_ms=float(rate_monitor_period_ms),
@@ -716,7 +716,7 @@ def run_pci_trial_job(
         model_family="adex_zerlaut",
         zerlaut_matteo=False,
         zerlaut_gk_gna=False,
-        zerlaut_order=1,
+        zerlaut_order=2,  # second-order: matches TVBSim default (adds C_ee, C_ei, C_ii)
         stochastic_integrator=True,
         monitor_mode="temporal_average",
         temporal_average_period_ms=float(rate_monitor_period_ms),
