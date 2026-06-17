@@ -14,38 +14,70 @@ This repository is intentionally separate from legacy TVBSim so that both projec
 
 ## Installation
 
+Recommended fresh-clone setup:
+
 ```bash
-cd /path/to/TVBToolkit
-pip install -e .
+git clone https://github.com/bmilinkovic/TVBToolkit.git
+cd TVBToolkit
+conda env create -f environment.yml
+conda activate tvbtoolkit
+python -m ipykernel install --user --name tvbtoolkit --display-name "Python (TVBToolkit)"
 ```
 
-Recommended: install inside your `tvb` conda environment.
+Quick sanity check:
+
+```bash
+python -c "import tvbtoolkit; print(tvbtoolkit.__file__)"
+```
+
+If that prints a path ending in `src/tvbtoolkit`, your editable install is configured correctly.
+
+If you already have a suitable Python environment and only want to install the toolbox:
+
+```bash
+cd /path/to/TVBToolkit
+python -m pip install -e ".[dev,notebooks]"
+```
+
+Optional neuroimaging helpers used by some downstream PHIID/visualization scripts can be installed with:
+
+```bash
+python -m pip install -e ".[neuro]"
+```
+
+On the HPC, after transferring or cloning the repository:
+
+```bash
+cd /path/to/TVBToolkit
+bash hpc/create_conda_env.sh
+conda activate tvbtoolkit
+bash hpc/smoke_test_login.sh
+```
 
 ## First 10 Minutes (macOS + conda)
 
 If you are setting up from scratch, these commands should get you running quickly.
 
 ```bash
-# 1) Move to the repository
-cd /path/to/TVBToolkit
+# 1) Clone or move to the repository
+git clone https://github.com/bmilinkovic/TVBToolkit.git
+cd TVBToolkit
 
-# 2) Activate your TVB conda environment
-conda activate tvb
+# 2) Create and activate the reproducible environment
+conda env create -f environment.yml
+conda activate tvbtoolkit
 
-# 3) Install the package in editable mode
-pip install -e .
+# 3) Register the environment as a Jupyter kernel (one-time)
+python -m ipykernel install --user --name tvbtoolkit --display-name "Python (TVBToolkit)"
 
-# 4) Register the environment as a Jupyter kernel (one-time)
-python -m ipykernel install --user --name tvb --display-name "Python (tvb)"
-
-# 5) Launch Jupyter
+# 4) Launch Jupyter
 jupyter lab
 ```
 
 In Jupyter:
 
 1. Open one of the notebooks in `notebooks/`.
-2. Set kernel to **Python (tvb)**.
+2. Set kernel to **Python (TVBToolkit)**.
 3. Run all cells from top to bottom.
 4. Keep `FAST_MODE=True` for the first pass.
 

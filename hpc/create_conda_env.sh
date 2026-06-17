@@ -23,14 +23,15 @@ fi
 conda create -y -n "${ENV_NAME}" python=3.11 pip
 conda activate "${ENV_NAME}"
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e .
-python -m pip install pytest
+python -m pip install -e ".[dev,notebooks]"
 python - <<'PY'
 import sys
 print(sys.version)
-import numpy, scipy, sklearn, matplotlib
+import numpy, scipy, sklearn, matplotlib, pandas, tvb
 print('numpy', numpy.__version__)
 print('scipy', scipy.__version__)
 print('sklearn', sklearn.__version__)
 print('matplotlib', matplotlib.__version__)
+print('pandas', pandas.__version__)
+print('tvb', tvb.__file__)
 PY

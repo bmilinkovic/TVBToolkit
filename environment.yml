@@ -1,0 +1,17 @@
+name: tvbtoolkit
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy>=1.24
+  - scipy>=1.10
+  - matplotlib>=3.7
+  - pandas>=2.0
+  - scikit-learn>=1.3
+  - numba>=0.59
+  - tqdm>=4.66
+  - ipykernel>=6
+  - jupyterlab>=4
+  - pip:
+      - -e .[dev,notebooks]
