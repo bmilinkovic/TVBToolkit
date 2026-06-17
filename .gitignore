@@ -37,6 +37,10 @@ external/
 projects/
 
 # Large generated scientific artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 *.npz
 *.npy
 *.mat
