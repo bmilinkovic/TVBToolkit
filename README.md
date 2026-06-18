@@ -108,6 +108,22 @@ print(result.raw.shape)         # (time, region)
 print(result.region_labels[:5])
 ```
 
+## Packaged Reference Assets
+
+Small, non-sensitive reference assets are included for reusable whole-brain
+simulation workflows:
+
+- `data/receptors/hansen_receptors_aal90.csv`: AAL90 receptor/transporter
+  density maps derived from the Hansen et al. PET atlas.
+- `data/brain_act/source/atlases/`: AAL90 lookup tables defining the region
+  labels/order used by the AAL90 workflows.
+- `data/connectivity/average_aal90/`: a generic/average AAL90 structural
+  connectome with `weights.txt`, `tract_lengths.txt`, `centres.txt`, and a
+  TVB-style zip archive.
+
+Sensitive participant data and generated outputs remain ignored and are not
+tracked in Git.
+
 ### 2) Single-region AdEx simulation (Brian2)
 
 ```python

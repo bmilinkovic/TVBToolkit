@@ -1,0 +1,108 @@
+# Copyright (c) 2008-2021 the MRtrix3 contributors.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Covered Software is provided under this License on an "as is"
+# basis, without warranty of any kind, either expressed, implied, or
+# statutory, including, without limitation, warranties that the
+# Covered Software is free of defects, merchantable, fit for a
+# particular purpose or non-infringing.
+# See the Mozilla Public License v. 2.0 for more details.
+#
+# For more details, see http://www.mrtrix.org/.
+
+0	???     Unknown                 0   0   0   0
+
+1	FAG	Precentral_L	         243 231 117 255
+2	FAD	Precentral_R	         243 231 117 255
+3	F1G	Frontal_Sup_L	         212 91  65  255
+4	F1D	Frontal_Sup_R	         212 91  65  255
+5	F1OG	Frontal_Sup_Orb_L	 227 141 65  255
+6	F1OD	Frontal_Sup_Orb_R	 227 141 65  255
+7	F2G	Frontal_Mid_L	         157 179 83  255
+8	F2D	Frontal_Mid_R	         157 179 83  255
+9	F2OG	Frontal_Mid_Orb_L	 246 236 164 255
+10	F2OD	Frontal_Mid_Orb_R	 246 236 164 255
+11	F3OPG	Frontal_Inf_Oper_L	 192 207 213 255
+12	F3OPD	Frontal_Inf_Oper_R	 192 207 213 255
+13	F3TG	Frontal_Inf_Tri_L	 220 245 129 255
+14	F3TD	Frontal_Inf_Tri_R	 220 245 129 255
+15	F3OG	Frontal_Inf_Orb_L	 183 145 163 255
+16	F3OD	Frontal_Inf_Orb_R	 183 145 163 255
+17	ORG	Rolandic_Oper_L	 65  39  86  255
+18	ORD	Rolandic_Oper_R	 65  39  86  255
+19	SMAG	Supp_Motor_Area_L	 56  34  80  255
+20	SMAD	Supp_Motor_Area_R	 56  34  80  255
+21	COBG	Olfactory_L	         136 45  97  255
+22	COBD	Olfactory_R		 136 45  97  255
+23	FMG	Frontal_Sup_Medial_L	 177 194 148 255
+24	FMD	Frontal_Sup_Medial_R	 177 194 148 255
+25	FMOG	Frontal_Med_Orb_L	 226 142 69  255
+26	FMOD	Frontal_Med_Orb_R	 226 142 69  255
+27	GRG	Rectus_L		 159 179 141 255
+28	GRD	Rectus_R	         159 179 141 255
+29	ING	Insula_L	  	 111 120 63  255
+30	IND	Insula_R	 	 111 120 63  255
+31	CIAG	Cingulum_Ant_L	164 90  126 255
+32	CIAD	Cingulum_Ant_R	164 90  126 255
+33	CINMG	Cingulum_Mid_L	131 156 62  255
+34	CINMD	Cingulum_Mid_R	131 156 62  255
+35	CIPG	Cingulum_Post_L	 184 161 54  255
+36	CIPD	Cingulum_Post_R	 184 161 54  255
+37	HIPPOG	Hippocampus_L	55  34  83  255
+38	HIPPOD	Hippocampus_R	55  34  83  255
+39	PARA_HIPPOG	ParaHippocampal_L	140 66  68  255
+40	PARA_HIPPOD	ParaHippocampal_R	140 66  68  255
+41	AMYGDG	Amygdala_L	246 224 90  255
+42	AMYGDD	Amygdala_R	246 224 90  255
+43	V1G	Calcarine_L	255 255 255 255
+44	V1D	Calcarine_R	255 255 255 255
+45	QG	Cuneus_L	111 115 68  255
+46	QD	Cuneus_R	111 115 68  255
+47	LINGG	Lingual_L	155 65  63  255
+48	LINGD	Lingual_R	155 65  63  255
+49	O1G	Occipital_Sup_L	200 117 72  255
+50	O1D	Occipital_Sup_R	200 117 72  255
+51	O2G	Occipital_Mid_L	186 70  94  255
+52	O2D	Occipital_Mid_R	186 70  94  255
+53	O3G	Occipital_Inf_L	163 182 79  255
+54	O3D	Occipital_Inf_R	163 182 79  255
+55	FUSIG	Fusiform_L	203 79  107 255
+56	FUSID	Fusiform_R	203 79  107 255
+57	PAG	Postcentral_L	97  110 64  255
+58	PAD	Postcentral_R	97  110 64  255
+59	P1G	Parietal_Sup_L	138 168 107 255
+60	P1D	Parietal_Sup_R	138 168 107 255
+61	P2G	Parietal_Inf_L	77  78  117 255
+62	P2D	Parietal_Inf_R	77  78  117 255
+63	GSMG	SupraMarginal_L	85  45  94  255
+64	GSMD	SupraMarginal_R	85  45  94  255
+65	GAG	Angular_L	109 93  128 255
+66	GAD	Angular_R	109 93  128 255
+67	PQG	Precuneus_L	137 54  72  255
+68	PQD	Precuneus_R	137 54  72  255
+69	LPCG	Paracentral_Lobule_L	151 126 57  255
+70	LPCD	Paracentral_Lobule_R	151 126 57  255
+71	NCG	Caudate_L	133 32  87  255
+72	NCD	Caudate_R	133 32  87  255
+73	NLG	Putamen_L	88  113 113 255
+74	NLD	Putamen_R	88  113 113 255
+75	PALLG	Pallidum_L	46  37  77  255
+76	PALLD	Pallidum_R	46  37  77  255
+77	THAG	Thalamus_L	155 177 115 255
+78	THAD	Thalamus_R	155 177 115 255
+79	HESCHLG	Heschl_L	172 189 88  255
+80	HESCHLD	Heschl_R	172 189 88  255
+81	T1G	Temporal_Sup_L	224 117 61  255
+82	T1D	Temporal_Sup_R	224 117 61  255
+83	T1AG	Temporal_Pole_Sup_L	203 84  90  255
+84	T1AD	Temporal_Pole_Sup_R	203 84  90  255
+85	T2G	Temporal_Mid_L	54  45  97  255
+86	T2D	Temporal_Mid_R	54  45  97  255
+87	T2AG	Temporal_Pole_Mid_L	161 183 97  255
+88	T2AD	Temporal_Pole_Mid_R	161 183 97  255
+89	T3G	Temporal_Inf_L	132 135 164 255
+90	T3D	Temporal_Inf_R	132 135 164 255
+

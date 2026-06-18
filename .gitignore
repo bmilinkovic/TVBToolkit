@@ -28,6 +28,7 @@ hpc/logs/
 # Generated analysis outputs and figures
 notebooks/outputs/
 notebooks/figs/
+notebooks/data/
 results/
 figures/
 
@@ -35,6 +36,35 @@ figures/
 data/
 external/
 projects/
+
+# Public, non-sensitive toolbox reference assets.
+!/data/
+/data/*
+!/data/receptors/
+/data/receptors/*
+!/data/receptors/README.md
+!/data/receptors/hansen_receptors_aal90.csv
+!/data/reference/
+/data/reference/*
+!/data/reference/aal90_luppi2022_annotations_template.csv
+!/data/brain_act/
+/data/brain_act/*
+!/data/brain_act/source/
+/data/brain_act/source/*
+!/data/brain_act/source/atlases/
+/data/brain_act/source/atlases/*
+!/data/brain_act/source/atlases/README.md
+!/data/brain_act/source/atlases/custom_lookuptable_AAL.txt
+!/data/brain_act/source/atlases/symmetric_lookuptable.txt
+!/data/connectivity/
+/data/connectivity/*
+!/data/connectivity/average_aal90/
+/data/connectivity/average_aal90/*
+!/data/connectivity/average_aal90/README.md
+!/data/connectivity/average_aal90/centres.txt
+!/data/connectivity/average_aal90/tract_lengths.txt
+!/data/connectivity/average_aal90/weights.txt
+!/data/connectivity/average_aal90/connectivity_average_aal90.zip
 
 # Large generated scientific artifacts
 *.zip
@@ -51,6 +81,8 @@ projects/
 *.pkl
 *.pickle
 *.joblib
+
+!/data/connectivity/average_aal90/connectivity_average_aal90.zip
 
 # Logs and scheduler files
 *.log
