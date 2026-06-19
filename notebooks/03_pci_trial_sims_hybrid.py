@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pci-transient-ms", type=float, default=4000.0)
     p.add_argument("--t-analysis-ms-pci", type=float, default=300.0)
     p.add_argument("--pci-trial-sim-ms", type=float, default=8000.0)
-    p.add_argument("--stim-amplitude-pci", type=float, default=0.00015)
+    p.add_argument("--stim-amplitude-pci", type=float, default=0.00030)
     p.add_argument("--stim-duration-ms-pci", type=float, default=10.0)
     p.add_argument("--stim-region-pci", type=int, nargs="+", default=[18])
     p.add_argument("--stim-onset-seed", type=int, default=0)

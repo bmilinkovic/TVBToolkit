@@ -572,8 +572,8 @@ def run_pci_trial_job(
     t_analysis_ms: float,
     rate_monitor_period_ms: float,
     base_parameter_model: dict[str, Any],
-    stim_amplitude: float = 0.0005,
-    stim_duration_ms: float = 50.0,
+    stim_amplitude: float = 0.0003,
+    stim_duration_ms: float = 10.0,
     stim_region: "list[int] | None" = None,
     stim_onset_ms: "float | None" = None,
     total_sim_ms: "float | None" = None,
@@ -631,10 +631,12 @@ def run_pci_trial_job(
         AdEx Zerlaut parameter overrides (T, P_e, P_i, etc.).
     stim_amplitude : float
         Stimulus amplitude injected into variable E (kHz).
-        Hugo/Maria convention: 0.0005 kHz (0.5 Hz).
+        Default 0.0003 kHz (0.3 Hz), selected by the TVBToolkit PCI
+        stimulation calibration sweep to avoid high-b saturation while
+        preserving a visible perturbational response.
     stim_duration_ms : float
         Duration of the rectangular pulse (milliseconds).
-        Hugo/Maria convention: 50 ms.
+        Default 10 ms, selected by the same calibration sweep.
     stim_region : list[int] or None
         Region indices (0-based) to stimulate.  ``None`` defaults to ``[0]``
         (first node in the SC matrix).  Mirror TVBSim's single-seed approach:
