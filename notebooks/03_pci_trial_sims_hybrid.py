@@ -84,8 +84,8 @@ def parse_args() -> argparse.Namespace:
                    choices=tuple(CONDITION_B_GRADIENTS.keys()),
                    help="Condition-specific b gradient to run. Defaults to doc_gradient.")
 
-    # TVBSim-style multi-trial PCI convention: 5 independent perturbation trials.
-    p.add_argument("--n-trials-pci", type=int, default=5)
+    # TVBSim-style multi-trial PCI convention: 100 independent perturbation trials.
+    p.add_argument("--n-trials-pci", type=int, default=100)
     p.add_argument("--pci-transient-ms", type=float, default=4000.0)
     p.add_argument("--t-analysis-ms-pci", type=float, default=300.0)
     p.add_argument("--pci-trial-sim-ms", type=float, default=8000.0)

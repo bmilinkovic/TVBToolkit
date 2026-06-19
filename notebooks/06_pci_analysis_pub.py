@@ -38,8 +38,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--scenario", action="append", dest="scenarios", default=None)
     p.add_argument("--b-tag", type=str, default=None,
                    help="Optional b-tag level to process, e.g. b035 or condb_doc_gradient.")
-    p.add_argument("--n-trials", type=int, default=5)
-    p.add_argument("--min-trials", type=int, default=5)
+    p.add_argument("--n-trials", type=int, default=100)
+    p.add_argument("--min-trials", type=int, default=100)
     p.add_argument("--t-analysis-ms", type=float, default=300.0)
     p.add_argument("--dt-ms-default", type=float, default=7.8125)
     p.add_argument("--nshuffles", type=int, default=10)
