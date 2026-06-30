@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -37,6 +37,47 @@ class WholeBrainConfig:
     include_bold_monitor: bool = False
     bold_monitor_period_ms: float = 2000.0
     bold_monitor_variables: tuple[int, ...] = (0,)
+    connectivity_zip: str | Path | None = None
+    weights: np.ndarray | None = None
+    tract_lengths: np.ndarray | None = None
+    parameter_overrides: dict = field(default_factory=dict)
+
+
+@dataclass
+class SurfaceConfig:
+    """Configuration for surface-based TVB AdEx/Zerlaut simulations.
+
+    Surface runs use the same AdEx mean-field parameter machinery as
+    :class:`WholeBrainConfig`, plus a TVB ``Cortex`` made from a cortical
+    surface, a region mapping, and local connectivity.
+    """
+
+    simulation_length_ms: float = 2000.0
+    dt_ms: float = 0.1
+    conduction_speed: float = 4.0
+    coupling_strength: float = 0.3
+    local_coupling_strength: float = 1.0
+    local_connectivity_cutoff_mm: float = 40.0
+
+    surface_file: str | Path | None = None
+    region_mapping_file: str | Path | None = None
+    local_connectivity_file: str | Path | None = None
+    local_connectivity_matrix: Any | None = None
+
+    model_family: Literal["adex_zerlaut"] = "adex_zerlaut"
+    zerlaut_matteo: bool = False
+    zerlaut_gk_gna: bool = False
+    zerlaut_order: Literal[1, 2] = 2
+    stochastic_integrator: bool = True
+
+    # Monitor selection:
+    # - "spatial_average": region-average surface output using cortex.region_mapping.
+    # - "temporal_average": vertex/node output sampled over time.
+    # - "raw": vertex/node output at each integration step.
+    monitor_mode: Literal["spatial_average", "temporal_average", "raw"] = "spatial_average"
+    temporal_average_period_ms: float = 1.0
+    monitor_variables: tuple[int, ...] = (0, 1)
+
     connectivity_zip: str | Path | None = None
     weights: np.ndarray | None = None
     tract_lengths: np.ndarray | None = None

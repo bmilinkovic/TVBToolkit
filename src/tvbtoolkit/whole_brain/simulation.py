@@ -185,18 +185,29 @@ def _build_connectivity(parameters: Parameters, cfg: WholeBrainConfig):
     return connection
 
 
-def _configure_shared_noise(model, parameter_model: dict[str, Any], connection) -> None:
-    """Configure private/shared OU-noise mixing for Zerlaut-family models."""
+def _configure_shared_noise(
+    model,
+    parameter_model: dict[str, Any],
+    connection,
+    region_mapping: np.ndarray | None = None,
+) -> None:
+    """Configure private/shared OU-noise mixing for Zerlaut-family models.
+
+    ``region_mapping`` is used by surface simulations, where the model state is
+    node/vertex-sized while long-range connectivity remains region-sized.
+    """
     noise_alpha = float(parameter_model.get("noise_alpha", 0.0))
     if hasattr(model, "noise_alpha"):
         model.noise_alpha = np.array([noise_alpha], dtype=float)
 
     n_regions = int(np.asarray(connection.weights).shape[0])
+    mapping = None if region_mapping is None else np.asarray(region_mapping, dtype=int).reshape(-1)
+    n_nodes = n_regions if mapping is None else int(mapping.size)
     shared_noise_mode = str(parameter_model.get("shared_noise_mode", "none")).lower()
     if shared_noise_mode in ("none", "private"):
-        shared_noise_matrix = np.eye(n_regions, dtype=float)
+        shared_noise_matrix = np.eye(n_nodes, dtype=float)
     elif shared_noise_mode == "global":
-        shared_noise_matrix = np.full((n_regions, n_regions), 1.0 / max(n_regions, 1), dtype=float)
+        shared_noise_matrix = np.full((n_nodes, n_nodes), 1.0 / max(n_nodes, 1), dtype=float)
     elif shared_noise_mode in ("connectivity", "sc", "weights"):
         weights_nonneg = np.array(connection.weights, dtype=float)
         weights_nonneg = np.maximum(weights_nonneg, 0.0)
@@ -207,6 +218,13 @@ def _configure_shared_noise(model, parameter_model: dict[str, Any], connection) 
         shared_noise_matrix[non_zero_rows] = weights_nonneg[non_zero_rows] / row_sum[non_zero_rows]
         zero_rows = np.where(~non_zero_rows)[0]
         shared_noise_matrix[zero_rows, zero_rows] = 1.0
+        if mapping is not None:
+            if np.any(mapping < 0) or np.any(mapping >= n_regions):
+                raise ValueError(
+                    "region_mapping contains indices outside the connectivity region range "
+                    f"0..{n_regions - 1}."
+                )
+            shared_noise_matrix = shared_noise_matrix[mapping][:, mapping]
     else:
         raise ValueError(
             "Unsupported shared_noise_mode. Use one of: 'none', 'global', 'connectivity'. "
@@ -215,6 +233,127 @@ def _configure_shared_noise(model, parameter_model: dict[str, Any], connection) 
 
     model._shared_noise_mode = shared_noise_mode
     model._shared_noise_matrix = shared_noise_matrix
+
+
+def _configure_zerlaut_model_parameters(
+    model,
+    parameters: Parameters,
+    n_nodes: int,
+    parameter_value_prepare=None,
+) -> None:
+    """Assign legacy Zerlaut parameters to a TVB model instance."""
+    if parameter_value_prepare is None:
+        parameter_value_prepare = _prepare_region_parameter_value
+    to_skip = ["initial_condition", "matteo", "order", "gK_gNa", "noise_alpha", "shared_noise_mode"]
+    regionwise_keys = {
+        "g_K_e",
+        "g_K_i",
+        "g_Na_e",
+        "g_Na_i",
+        "E_L_e",
+        "E_L_i",
+    }
+    for key, value in parameters.parameter_model.items():
+        if key in to_skip:
+            continue
+        arr = np.array(value)
+        if key in regionwise_keys:
+            arr = parameter_value_prepare(key, value, n_nodes)
+        setattr(model, key, arr)
+    for key, val in parameters.parameter_model["initial_condition"].items():
+        model.state_variable_range[key] = val
+
+
+def _build_coupling(parameters: Parameters):
+    """Build a TVB coupling object from the legacy parameter schema."""
+    pc = parameters.parameter_coupling
+    return getattr(lab.coupling, pc["type"])(
+        **{k: np.array(v) for k, v in pc["coupling_parameter"].items()}
+    )
+
+
+def _build_integrator(parameters: Parameters, cfg: WholeBrainConfig, model, connection, seed: int):
+    """Build a deterministic or stochastic TVB integrator."""
+    pi = parameters.parameter_integrator
+    if not pi["stochastic"]:
+        if pi["type"] == "Heun":
+            return lab.integrators.HeunDeterministic(dt=float(pi["dt"]))
+        if pi["type"] == "Euler":
+            return lab.integrators.EulerDeterministic(dt=float(pi["dt"]))
+        raise ValueError(f"Unsupported deterministic integrator: {pi['type']}")
+
+    if pi["noise_type"] != "Additive":
+        raise ValueError("Only Additive stochastic noise is currently supported for parity mode.")
+    # Re-shape legacy nsig safely if model dimensionality changed
+    # (e.g. switching Zerlaut order 2 <-> 1 in notebooks).
+    nsig_raw = np.asarray(pi["noise_parameter"]["nsig"], dtype=float)
+    nvar = max(1, int(getattr(model, "nvar", max(1, int(nsig_raw.size)))))
+    # `connection.number_of_regions` can remain 0 in some construction paths
+    # before full TVB configuration; derive robustly from weights.
+    weights = np.asarray(connection.weights)
+    weights_regions = int(weights.shape[0]) if weights.ndim >= 2 else int(weights.size)
+    conn_regions = int(getattr(connection, "number_of_regions", 0) or 0)
+    n_regions = max(1, conn_regions, weights_regions)
+    n_modes = max(1, int(getattr(model, "number_of_modes", 1)))
+
+    def _default_nsig_value() -> float:
+        if nsig_raw.size > 0:
+            return float(np.ravel(nsig_raw)[0])
+        return 1e-5
+
+    base = np.full((nvar, n_regions), _default_nsig_value(), dtype=float)
+
+    if nsig_raw.ndim == 0:
+        base[:, :] = float(nsig_raw)
+    elif nsig_raw.ndim == 1:
+        vec = np.ravel(nsig_raw)
+        if vec.size == 0:
+            pass
+        elif vec.size == 1:
+            base[:, :] = float(vec[0])
+        else:
+            if vec.size < nvar:
+                vec = np.pad(vec, (0, nvar - vec.size), mode="edge")
+            elif vec.size > nvar:
+                # Legacy parity: keep trailing entries so that the dedicated
+                # noise-state coefficient (last index) is preserved when
+                # switching 8-var -> 5-var models.
+                vec = vec[-nvar:]
+            base = np.repeat(vec[:, None], n_regions, axis=1)
+    elif nsig_raw.ndim >= 2:
+        arr = np.asarray(nsig_raw, dtype=float)
+        if arr.ndim > 2:
+            arr = arr.reshape(arr.shape[0], -1)
+
+        if arr.shape[0] == 0 or arr.shape[1] == 0:
+            arr = np.full((max(1, arr.shape[0]), max(1, arr.shape[1])), _default_nsig_value(), dtype=float)
+
+        if arr.shape[0] < nvar:
+            arr = np.vstack([arr, np.repeat(arr[-1:, :], nvar - arr.shape[0], axis=0)])
+        elif arr.shape[0] > nvar:
+            arr = arr[-nvar:, :]
+        arr = arr[:nvar, :]
+
+        if arr.shape[1] < n_regions:
+            arr = np.hstack([arr, np.repeat(arr[:, -1:], n_regions - arr.shape[1], axis=1)])
+        arr = arr[:, :n_regions]
+        base = arr
+
+    # TVB stochastic integrators are safest with explicit
+    # (nvar, n_regions, n_modes). Surface simulations remap this to nodes in
+    # Simulator._configure_integrator_noise().
+    nsig = np.repeat(base[:, :, None], n_modes, axis=2)
+
+    noise = lab.noise.Additive(
+        nsig=nsig,
+        ntau=pi["noise_parameter"]["ntau"],
+    )
+    noise.random_stream.seed(seed)
+    if pi["type"] == "Heun":
+        return lab.integrators.HeunStochastic(noise=noise, dt=pi["dt"])
+    if pi["type"] == "Euler":
+        return lab.integrators.EulerStochastic(noise=noise, dt=pi["dt"])
+    raise ValueError(f"Unsupported stochastic integrator: {pi['type']}")
 
 
 def _build_monitors(parameter_monitor: dict):
@@ -402,114 +541,10 @@ def run_whole_brain_simulation(cfg: WholeBrainConfig, seed: int = 0) -> WholeBra
         connection_obj = connection
         n_regions = int(np.asarray(connection.weights).shape[0])
 
-        # Match legacy model-parameter assignment behavior.
-        to_skip = ["initial_condition", "matteo", "order", "gK_gNa", "noise_alpha", "shared_noise_mode"]
-        regionwise_keys = {
-            "g_K_e",
-            "g_K_i",
-            "g_Na_e",
-            "g_Na_i",
-            "E_L_e",
-            "E_L_i",
-        }
-        for key, value in parameters.parameter_model.items():
-            if key in to_skip:
-                continue
-            arr = np.array(value)
-            if key in regionwise_keys:
-                arr = _prepare_region_parameter_value(key, value, n_regions)
-            setattr(model, key, arr)
-        for key, val in parameters.parameter_model["initial_condition"].items():
-            model.state_variable_range[key] = val
-
+        _configure_zerlaut_model_parameters(model, parameters, n_regions)
         _configure_shared_noise(model, parameters.parameter_model, connection)
-
-        pc = parameters.parameter_coupling
-        coupling = getattr(lab.coupling, pc["type"])(
-            **{k: np.array(v) for k, v in pc["coupling_parameter"].items()}
-        )
-
-        pi = parameters.parameter_integrator
-        if not pi["stochastic"]:
-            if pi["type"] == "Heun":
-                integrator = lab.integrators.HeunDeterministic(dt=np.array(pi["dt"]))
-            elif pi["type"] == "Euler":
-                integrator = lab.integrators.EulerDeterministic(dt=np.array(pi["dt"]))
-            else:
-                raise ValueError(f"Unsupported deterministic integrator: {pi['type']}")
-        else:
-            if pi["noise_type"] != "Additive":
-                raise ValueError("Only Additive stochastic noise is currently supported for parity mode.")
-            # Re-shape legacy nsig safely if model dimensionality changed
-            # (e.g. switching Zerlaut order 2 <-> 1 in notebooks).
-            nsig_raw = np.asarray(pi["noise_parameter"]["nsig"], dtype=float)
-            nvar = max(1, int(getattr(model, "nvar", max(1, int(nsig_raw.size)))))
-            # `connection.number_of_regions` can remain 0 in some construction
-            # paths before full TVB configuration; derive robustly from weights.
-            weights = np.asarray(connection.weights)
-            weights_regions = int(weights.shape[0]) if weights.ndim >= 2 else int(weights.size)
-            conn_regions = int(getattr(connection, "number_of_regions", 0) or 0)
-            n_regions = max(1, conn_regions, weights_regions)
-            n_modes = max(1, int(getattr(model, "number_of_modes", 1)))
-
-            def _default_nsig_value() -> float:
-                if nsig_raw.size > 0:
-                    return float(np.ravel(nsig_raw)[0])
-                return 1e-5
-
-            base = np.full((nvar, n_regions), _default_nsig_value(), dtype=float)
-
-            if nsig_raw.ndim == 0:
-                base[:, :] = float(nsig_raw)
-            elif nsig_raw.ndim == 1:
-                vec = np.ravel(nsig_raw)
-                if vec.size == 0:
-                    pass
-                elif vec.size == 1:
-                    base[:, :] = float(vec[0])
-                else:
-                    if vec.size < nvar:
-                        vec = np.pad(vec, (0, nvar - vec.size), mode="edge")
-                    elif vec.size > nvar:
-                        # Legacy parity: keep trailing entries so that the
-                        # dedicated noise-state coefficient (last index) is
-                        # preserved when switching 8-var -> 5-var models.
-                        vec = vec[-nvar:]
-                    base = np.repeat(vec[:, None], n_regions, axis=1)
-            elif nsig_raw.ndim >= 2:
-                arr = np.asarray(nsig_raw, dtype=float)
-                if arr.ndim > 2:
-                    arr = arr.reshape(arr.shape[0], -1)
-
-                # Ensure non-empty 2D noise table.
-                if arr.shape[0] == 0 or arr.shape[1] == 0:
-                    arr = np.full((max(1, arr.shape[0]), max(1, arr.shape[1])), _default_nsig_value(), dtype=float)
-
-                if arr.shape[0] < nvar:
-                    arr = np.vstack([arr, np.repeat(arr[-1:, :], nvar - arr.shape[0], axis=0)])
-                elif arr.shape[0] > nvar:
-                    arr = arr[-nvar:, :]
-                arr = arr[:nvar, :]
-
-                if arr.shape[1] < n_regions:
-                    arr = np.hstack([arr, np.repeat(arr[:, -1:], n_regions - arr.shape[1], axis=1)])
-                arr = arr[:, :n_regions]
-                base = arr
-
-            # TVB stochastic integrators are safest with explicit (nvar, n_regions, n_modes)
-            nsig = np.repeat(base[:, :, None], n_modes, axis=2)
-
-            noise = lab.noise.Additive(
-                nsig=nsig,
-                ntau=pi["noise_parameter"]["ntau"],
-            )
-            noise.random_stream.seed(seed)
-            if pi["type"] == "Heun":
-                integrator = lab.integrators.HeunStochastic(noise=noise, dt=pi["dt"])
-            elif pi["type"] == "Euler":
-                integrator = lab.integrators.EulerStochastic(noise=noise, dt=pi["dt"])
-            else:
-                raise ValueError(f"Unsupported stochastic integrator: {pi['type']}")
+        coupling = _build_coupling(parameters)
+        integrator = _build_integrator(parameters, cfg, model, connection, seed)
 
         monitors = _build_monitors(parameters.parameter_monitor)
         if not monitors:

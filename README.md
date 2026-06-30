@@ -5,6 +5,7 @@
 It provides:
 
 - **Whole-brain AdEx mean-field simulation** (Zerlaut family) using TVB, with strict-parity options aligned to the legacy TVBSim model family.
+- **Surface-based AdEx mean-field simulation** using TVB Cortex/local-connectivity objects.
 - **Single-region AdEx E/I simulation** using Brian2.
 - **Complexity measures** (including LZc and Casali-style PCI) implemented in a modern, scriptable API.
 - **Condition-batch workflows** for control/ketamine/psilocybin experiments.
@@ -134,6 +135,13 @@ out = run_single_region_simulation(cfg, seed_value=1)
 
 print(out.exc_rate_hz.shape, out.inh_rate_hz.shape)
 ```
+
+### Surface-based AdEx simulation
+
+Surface workflows live under `tvbtoolkit.surface` and reuse the same
+AdEx/Zerlaut parameter machinery as whole-brain runs. They require aligned TVB
+surface, region-mapping, and connectivity assets; see
+`docs/surface_adex_simulations.md`.
 
 ### 3) Complexity metrics
 

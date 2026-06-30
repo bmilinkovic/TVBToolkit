@@ -77,7 +77,7 @@ from tvbtoolkit.complexity.measures import (
     pci_ratio_proxy,
     sce,
 )
-from tvbtoolkit.core.config import OutputConfig, SingleRegionConfig, WholeBrainConfig
+from tvbtoolkit.core.config import OutputConfig, SingleRegionConfig, SurfaceConfig, WholeBrainConfig
 from tvbtoolkit.core.system import SystemSpecs, detect_system_specs, recommend_parallel_workers
 from tvbtoolkit.datasets import (
     AAL90Atlas,
@@ -111,6 +111,12 @@ except Exception as _whole_brain_import_error:
     fcsc_seedwise_from_saved_batch = None
     WholeBrainResult = None
     run_whole_brain_simulation = None
+
+try:
+    from tvbtoolkit.surface import SurfaceResult, run_surface_adex_simulation
+except Exception as _surface_import_error:
+    SurfaceResult = None
+    run_surface_adex_simulation = None
 
 from tvbtoolkit.visualization import (
     plot_brain_state_occupancy,
@@ -195,6 +201,9 @@ __all__ = [
     "WholeBrainConfig",
     "WholeBrainResult",
     "run_whole_brain_simulation",
+    "SurfaceConfig",
+    "SurfaceResult",
+    "run_surface_adex_simulation",
     "SingleRegionConfig",
     "SingleRegionResult",
     "run_single_region_simulation",
