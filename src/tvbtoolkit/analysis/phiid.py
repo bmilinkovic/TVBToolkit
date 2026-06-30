@@ -80,7 +80,11 @@ def _coerce_timeseries_time_by_region(timeseries: np.ndarray) -> np.ndarray:
         return x
     if x.shape[0] == 90:
         return x.T
-    raise ValueError(f"Could not infer AAL90 axis from shape {x.shape}.")
+    if x.shape[0] > x.shape[1]:
+        return x
+    if x.shape[1] > x.shape[0]:
+        return x.T
+    raise ValueError(f"Could not infer time/region axes from square shape {x.shape}.")
 
 
 def _apply_standardization(timeseries: np.ndarray, standardize: str | None) -> np.ndarray:

@@ -17,11 +17,22 @@ from scipy.signal import detrend, hilbert
 
 from tvbtoolkit.complexity.pci_casali import (
     binarise_signals,
+    binarise_signals_casali,
     lz_complexity_2d,
     pci_norm_factor,
     sort_binJ,
     source_entropy,
 )
+
+
+def _normalise_binarise_method(method: str) -> str:
+    """Return the canonical binarisation route key or raise on typos."""
+    key = str(method).lower()
+    if key in ("tvbsim", "shuffle", "current"):
+        return "tvbsim"
+    if key in ("casali", "paper", "bootstrap"):
+        return "casali"
+    raise ValueError(f"Unknown binarise_method {method!r}; use 'tvbsim' or 'casali'.")
 
 
 def _ensure_2d(x: np.ndarray) -> np.ndarray:
@@ -309,12 +320,23 @@ def pci_casali_like(
     percentile: float = 100.0,
     use_post_only: bool = True,
     return_debug: bool = False,
+    binarise_method: str = "tvbsim",
+    binarise_kwargs: dict[str, Any] | None = None,
 ) -> float | dict[str, Any]:
     """Compute Casali-style PCI from source-level activity.
 
     This is the TVBToolkit parity implementation of the TVBSim Casali pipeline:
 
     ``binarise_signals -> sort_binJ -> lz_complexity_2d -> pci_norm_factor``
+
+    The binarization step is selectable via ``binarise_method``:
+
+    - ``"tvbsim"`` (default): the original shuffle-based route, unchanged.
+    - ``"casali"`` : the paper-faithful bootstrap route
+      (:func:`~tvbtoolkit.complexity.pci_casali.binarise_signals_casali`),
+      matching how the empirical dataset's ``binJ`` was produced. Pass route
+      parameters (``n_bootstrap``, ``alpha``, ``two_sided``, ``seed``) via
+      ``binarise_kwargs``.
 
     Parameters
     ----------
@@ -383,14 +405,21 @@ def pci_casali_like(
         )
 
     window = X[:, start:stop]
-    signal_binary = binarise_signals(
-        window[np.newaxis, :, :],
-        t_stim=nbins_analysis,
-        nshuffles=int(nshuffles),
-        percentile=float(percentile),
-    )
-
-    binJ = signal_binary.astype(np.uint8)[0]
+    bin_kw = dict(binarise_kwargs or {})
+    method_key = _normalise_binarise_method(binarise_method)
+    if method_key == "casali":
+        # Paper-faithful route: returns a single (n_sources, n_bins) matrix.
+        binJ = binarise_signals_casali(
+            window[np.newaxis, :, :], t_stim=nbins_analysis, **bin_kw
+        ).astype(np.uint8)
+    elif method_key == "tvbsim":
+        signal_binary = binarise_signals(
+            window[np.newaxis, :, :],
+            t_stim=nbins_analysis,
+            nshuffles=int(nshuffles),
+            percentile=float(percentile),
+        )
+        binJ = signal_binary.astype(np.uint8)[0]
     if use_post_only:
         # Important unit fix: slice using bins, not milliseconds.
         binJ = binJ[:, nbins_analysis:]
@@ -424,6 +453,7 @@ def pci_casali_like(
         "shape_window": tuple(window.shape),
         "shape_binary": tuple(binJs.shape),
         "use_post_only": bool(use_post_only),
+        "binarise_method": method_key,
     }
 
 
@@ -436,8 +466,16 @@ def pci_casali_like_multi_trial(
     dt_ms: float,
     nshuffles: int = 10,
     percentile: float = 100.0,
+    binarise_method: str = "tvbsim",
+    binarise_kwargs: dict[str, Any] | None = None,
 ) -> "tuple[float, np.ndarray]":
     """Compute Casali-style PCI from multiple stimulation trials.
+
+    ``binarise_method`` selects the binarization route ("tvbsim" default, or
+    "casali" for the paper-faithful bootstrap route). Under ``"casali"`` the
+    trials are jointly reduced to a single trial-averaged ``binJ`` and one PCI
+    value is returned (with ``pci_per_trial`` holding that single value),
+    matching the empirical single-matrix convention.
 
     This is the exact multi-trial parity implementation matching TVBSim's
     ``_calculate_PCI_seed_subset`` and ``parallelized_PCI`` workflow.
@@ -562,6 +600,20 @@ def pci_casali_like_multi_trial(
 
     # Stack into (n_trials, n_sources, 2*nbins_analysis) — matches TVBSim.
     stacked = np.stack(windows, axis=0)
+    bin_kw = dict(binarise_kwargs or {})
+    method_key = _normalise_binarise_method(binarise_method)
+
+    if method_key == "casali":
+        # Paper-faithful route: trials reduce to one trial-averaged binJ.
+        binJ = binarise_signals_casali(
+            stacked, t_stim=nbins_analysis, **bin_kw
+        ).astype(np.uint8)[:, nbins_analysis:]
+        binJs = sort_binJ(binJ)
+        if np.any(binJs):
+            pci = float(lz_complexity_2d(binJs) / max(pci_norm_factor(binJs), np.finfo(float).eps))
+        else:
+            pci = 0.0
+        return pci, np.full(n_trials, pci, dtype=float)
 
     # ---- Joint binarization (pre-stimulus baseline pooled across trials) ----
     # t_stim = nbins_analysis  →  pre-stimulus is [:, :, :nbins_analysis]

@@ -285,8 +285,170 @@ def binarise_signals(
     return signal_centre_norm > signal_thresh
 
 
+def binarise_signals_casali(
+    signal_m: np.ndarray,
+    t_stim: int,
+    *,
+    n_bootstrap: int = 500,
+    alpha: float = 0.01,
+    two_sided: bool = True,
+    seed: int | None = 0,
+    single_trial: str = "raise",
+) -> np.ndarray:
+    """Binarize signals with the canonical Casali et al. (2013) procedure.
+
+    This is the method used to produce the empirical ``binJ`` matrices stored in
+    the tDCS/TMS-EEG dataset (``soglia = alpha = 0.01``). It differs from
+    :func:`binarise_signals` (the TVBSim/shuffle route) in five ways:
+
+    1. **Baseline subtraction then per-source z-scoring** by each source's own
+       baseline SD (significance in units of baseline variability), not relative
+       change to the baseline mean.
+    2. **Bootstrap** trial resampling for the null, not a temporal shuffle.
+    3. **Two-sided** significance (``|response| > thresh``), not one-sided.
+    4. Operates on the **trial-averaged** response → a single ``binJ``.
+    5. Threshold = the ``(1 - alpha)`` percentile of the bootstrap **max
+       statistic** over sources × baseline-time (multiple-comparison control).
+
+    Parameters
+    ----------
+    signal_m : np.ndarray
+        Real-valued signal, shape ``(n_trials, n_sources, n_bins)``. A 2D
+        ``(n_sources, n_bins)`` array is treated as a single trial, which is
+        rejected by default because the canonical bootstrap needs trials.
+    t_stim : int
+        Stimulation onset in **bins**; baseline is ``:t_stim``.
+    n_bootstrap : int, default=500
+        Number of bootstrap resamples for the null distribution.
+    alpha : float, default=0.01
+        Significance level (Casali ``soglia``); threshold is the
+        ``100 * (1 - alpha)`` percentile of the bootstrap max statistic.
+    two_sided : bool, default=True
+        If ``True`` threshold ``|response|`` (captures negative deflections).
+    seed : int or None, default=0
+        Seed for the bootstrap RNG.
+    single_trial : {"raise", "baseline_resample"}, default="raise"
+        Behavior when only one trial is supplied. ``"raise"`` refuses to
+        compute a trial-bootstrap threshold from a single averaged trace.
+        ``"baseline_resample"`` uses a non-canonical baseline time-resampling
+        surrogate and should be used only as an explicit sensitivity analysis.
+
+    Returns
+    -------
+    np.ndarray
+        ``uint8`` matrix of shape ``(n_sources, n_bins)`` — the trial-averaged
+        significant-source matrix (note: **not** per-trial, unlike
+        :func:`binarise_signals`).
+    """
+    s = np.asarray(signal_m, dtype=float)
+    if s.ndim == 2:
+        s = s[np.newaxis, :, :]
+    if s.ndim != 3:
+        raise ValueError(
+            f"Expected (n_trials, n_sources, n_bins) or (n_sources, n_bins), got {s.shape}."
+        )
+    n_trials, _, n_bins = s.shape
+    if not (1 <= t_stim < n_bins):
+        raise ValueError(f"t_stim must be in [1, n_bins-1]. Got {t_stim}, n_bins={n_bins}.")
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1.")
+    if not (0.0 < float(alpha) < 1.0):
+        raise ValueError("alpha must be between 0 and 1.")
+
+    single_trial_key = str(single_trial).lower()
+    if n_trials == 1 and single_trial_key in ("raise", "error", "strict"):
+        raise ValueError(
+            "Casali bootstrap binarisation requires more than one trial. "
+            "Pass trial-level data with shape (n_trials, n_sources, n_bins), "
+            "or set single_trial='baseline_resample' for a non-canonical "
+            "single-trace sensitivity analysis."
+        )
+    if n_trials == 1 and single_trial_key not in ("baseline_resample",):
+        raise ValueError(
+            "single_trial must be 'raise' or 'baseline_resample'. "
+            f"Got {single_trial!r}."
+        )
+
+    rng = np.random.default_rng(seed)
+
+    # 1. Baseline subtraction per trial & source, then per-source normalization
+    #    by baseline SD. Casali significance is expressed in units of each
+    #    source's own baseline variability; without this a single global
+    #    threshold is dominated by the loudest sources (source-current baseline
+    #    SD spans 1-2 orders of magnitude across vertices), leaving quiet
+    #    sources permanently sub-threshold and PCI strongly under-estimated.
+    base_mean = s[:, :, :t_stim].mean(axis=2, keepdims=True)
+    bc = s - base_mean
+    base_sd = bc[:, :, :t_stim].std(axis=(0, 2))  # (n_sources,) pooled SD
+    base_sd = np.where(base_sd < _EPS, 1.0, base_sd)
+    bc = bc / base_sd[np.newaxis, :, np.newaxis]
+    avg = bc.mean(axis=0)  # (n_sources, n_bins) z-scored trial-averaged response
+    base_bc = bc[:, :, :t_stim]  # (n_trials, n_sources, t_stim)
+
+    # 2/5. Bootstrap null of the max statistic over baseline.
+    maxstat = np.empty(int(n_bootstrap), dtype=float)
+    for b in range(int(n_bootstrap)):
+        if n_trials > 1:
+            idx = rng.integers(0, n_trials, n_trials)
+            boot = base_bc[idx].mean(axis=0)  # (n_sources, t_stim)
+        else:
+            # Non-canonical fallback: resample baseline time points with
+            # replacement while preserving the spatial pattern in each column.
+            idx = rng.integers(0, t_stim, t_stim)
+            boot = base_bc[0, :, idx]
+        vals = np.abs(boot) if two_sided else boot
+        maxstat[b] = float(vals.max())
+
+    thresh = float(np.quantile(maxstat, 1.0 - alpha))
+
+    # 3. Two-sided thresholding of the averaged response.
+    resp = np.abs(avg) if two_sided else avg
+    return (resp > thresh).astype(np.uint8)
+
+
+def binarise(
+    signal_m: np.ndarray,
+    t_stim: int,
+    *,
+    method: str = "tvbsim",
+    **kwargs,
+) -> np.ndarray:
+    """Binarize a continuous-valued signal via a selectable route.
+
+    Parameters
+    ----------
+    signal_m : np.ndarray
+        Real-valued signal, ``(n_trials, n_sources, n_bins)``.
+    t_stim : int
+        Stimulation onset in bins.
+    method : {"tvbsim", "casali"}, default="tvbsim"
+        - ``"tvbsim"`` : :func:`binarise_signals` — the existing shuffle-based
+          route (per-trial output). Accepts ``nshuffles``, ``percentile``.
+        - ``"casali"`` : :func:`binarise_signals_casali` — the paper-faithful
+          bootstrap route (single trial-averaged output). Accepts
+          ``n_bootstrap``, ``alpha``, ``two_sided``, ``seed``.
+    **kwargs
+        Forwarded to the selected route.
+
+    Returns
+    -------
+    np.ndarray
+        Binary matrix. Shape is route-dependent:
+        ``(n_trials, n_sources, n_bins)`` for ``"tvbsim"``;
+        ``(n_sources, n_bins)`` for ``"casali"``.
+    """
+    key = method.lower()
+    if key in ("tvbsim", "shuffle", "current"):
+        return binarise_signals(signal_m, t_stim, **kwargs)
+    if key in ("casali", "paper", "bootstrap"):
+        return binarise_signals_casali(signal_m, t_stim, **kwargs)
+    raise ValueError(f"Unknown binarisation method {method!r}; use 'tvbsim' or 'casali'.")
+
+
 __all__ = [
     "binarise_signals",
+    "binarise_signals_casali",
+    "binarise",
     "sort_binJ",
     "source_entropy",
     "lz_complexity_2d",

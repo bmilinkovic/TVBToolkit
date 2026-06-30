@@ -1,5 +1,5 @@
 function phiid_empirical_bold_aal90(input_dir, output_dir, redundancy, use_parallel, n_workers)
-%PHIID_EMPIRICAL_BOLD_AAL90 Run pairwise PhiID on empirical AAL90 BOLD.
+%PHIID_EMPIRICAL_BOLD_AAL90 Run pairwise PhiID on empirical atlas BOLD.
 %
 % This mirrors the legacy EEG workflow traced from:
 % - /Users/borjan/code/python/TVBEmergence/test/matlab/emergence_measures.m
@@ -131,11 +131,11 @@ else
     error('No supported timeseries variable found in %s', file_path);
 end
 
-if size(time_series, 1) ~= 90 && size(time_series, 2) == 90
+if size(time_series, 1) > size(time_series, 2)
     time_series = time_series.';
 end
-if size(time_series, 1) ~= 90
-    error('Expected 90 regions in %s, got size %dx%d', file_path, size(time_series, 1), size(time_series, 2));
+if size(time_series, 1) < 2 || size(time_series, 2) < 2
+    error('Expected a [regions x time] or [time x regions] matrix in %s, got size %dx%d', file_path, size(time_series, 1), size(time_series, 2));
 end
 row_std = std(time_series, 0, 2);
 degenerate_rows = find(~isfinite(row_std) | row_std <= 1e-12);

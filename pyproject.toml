@@ -20,6 +20,7 @@ dependencies = [
   "brian2>=2.5",
   "tqdm>=4.66",
   "tvb-library>=2.9",
+  "gdist>=2.1",
 ]
 
 [tool.setuptools]
