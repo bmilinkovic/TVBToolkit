@@ -20,6 +20,7 @@ from tvbtoolkit.analysis import (  # noqa: E402
     PUBLICATION_COHORT_ORDER,
     plot_publication_method_comparison_grid,
 )
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import (  # noqa: E402
     build_roi_order_reference,
     resolve_roi_order_names,
@@ -28,13 +29,13 @@ from brain_states_new_doc_bold_audited import (  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    p.add_argument("--results-root", type=str, default="results/phiid_empirical_bold")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    p.add_argument("--results-root", type=str, default=str(doc_liege_results("phiid_empirical_bold")))
     p.add_argument("--roi-reorder-mode", type=str, default="aal90_fc")
     p.add_argument(
         "--output-dir",
         type=str,
-        default="results/phiid_empirical_bold/figures/mmi_ccs_comparison/by_cohort",
+        default=str(doc_liege_results("phiid_empirical_bold", "figures", "mmi_ccs_comparison", "by_cohort")),
     )
     return p
 

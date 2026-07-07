@@ -4,17 +4,23 @@ This script performs lightweight checks (no heavy full notebook execution):
 - verifies notebook and mapped modules import
 - verifies paper precomputed survival arrays can be loaded
 - runs a tiny one-condition, one-seed whole-brain batch and computes FC-SC summary
-- writes a JSON report under `notebooks/outputs/repro_maria_sacha_nature/repro_check.json`
+- writes a JSON report under the external CNRS legacy-unsorted results tree
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import numpy as np
 from tvb.simulator import lab
 
+from tvbtoolkit.core.paths import legacy_results
 from tvbtoolkit import (
     WholeBrainConfig,
     OutputConfig,
@@ -26,8 +32,8 @@ from tvbtoolkit.whole_brain.analysis import fcsc_seedwise_from_saved_batch
 
 
 PAPER_ROOT = Path('/Users/borjan/CNRS/projects/paper_pipeline_hub')
-NOTEBOOK = Path('/Users/borjan/CNRS/projects/TVBToolkit/notebooks/repro_maria_sacha_nature.ipynb')
-OUT_ROOT = Path('/Users/borjan/CNRS/projects/TVBToolkit/notebooks/outputs/repro_maria_sacha_nature/repro_check')
+NOTEBOOK = _REPO_ROOT / "notebooks" / "repro_maria_sacha_nature.ipynb"
+OUT_ROOT = legacy_results("notebooks_outputs", "repro_maria_sacha_nature", "repro_check")
 
 
 def main() -> None:

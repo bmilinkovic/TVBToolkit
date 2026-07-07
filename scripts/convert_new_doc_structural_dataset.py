@@ -6,24 +6,31 @@ Builds:
 - subjects_<cohort>.npz
 - index.json
 
-from:
-- data/doc_patients_new_data/SC_send/norm/anon/*.mat (connectivity)
-- data/doc_patients_new_data/SC_send/lengths/anon/*.mat (tract lengths)
-- data/doc_patients_new_data/CNT_send/SC/CNT_SC*.mat (control)
+from the external DOC raw tree:
+- doc_data/SC_send/norm/anon/*.mat (connectivity)
+- doc_data/SC_send/lengths/anon/*.mat (tract lengths)
+- doc_data/CNT_send/SC/CNT_SC*.mat (control)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
+
 import numpy as np
 import pandas as pd
+
+from tvbtoolkit.core.paths import doc_liege_raw  # noqa: E402
 
 from brain_states_new_doc_bold_audited import (
     FILE_SPECS,
@@ -258,12 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--data-root",
         type=str,
-        default="data/doc_patients_new_data",
+        default=str(doc_liege_raw("doc_data")),
     )
     p.add_argument(
         "--output-root",
         type=str,
-        default="data/doc_patients_new_data/converted_structural",
+        default=str(doc_liege_raw("doc_data", "converted_structural")),
     )
     return p
 

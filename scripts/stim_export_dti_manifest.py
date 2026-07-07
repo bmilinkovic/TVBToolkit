@@ -12,9 +12,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from tvbtoolkit.core.paths import stimulation_raw  # noqa: E402
 
 
 def _subject_from_path(path: Path) -> str:
@@ -109,8 +116,8 @@ def export_dti_manifest(dti_root: Path, out_dir: Path) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dti-root", type=Path, default=Path("data/stim_data/tdcs-dti"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/stim_data/python_clean_primary"))
+    ap.add_argument("--dti-root", type=Path, default=stimulation_raw("stim_data", "tdcs-dti"))
+    ap.add_argument("--out-dir", type=Path, default=stimulation_raw("stim_data", "python_clean_primary"))
     args = ap.parse_args()
     summary = export_dti_manifest(args.dti_root, args.out_dir)
     print(json.dumps(summary, indent=2))

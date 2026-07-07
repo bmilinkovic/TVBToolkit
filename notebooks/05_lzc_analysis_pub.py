@@ -47,6 +47,7 @@ from brain_act_hybrid_common import (
 )
 
 from tvbtoolkit.complexity.measures import lzc_multichannel
+from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.datasets.brain_act import load_subject_structural
 
 
@@ -118,10 +119,10 @@ def parse_args() -> argparse.Namespace:
         description="Publication-ready LZc analysis from ba_sim_hybrid sims."
     )
     p.add_argument("--sim-root",   type=Path,
-                   default=PROJECT_ROOT / "notebooks" / "outputs" / "ba_sim_hybrid" / "shared_b" / "sims")
+                   default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid", "shared_b", "sims"))
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
     p.add_argument("--output-dir", type=Path,
-                   default=PROJECT_ROOT / "notebooks" / "outputs" / "05_lzc_analysis_pub")
+                   default=doc_liege_results("notebooks_outputs", "05_lzc_analysis_pub"))
     p.add_argument("--scenario",   action="append", dest="scenarios", default=None)
     p.add_argument("--b-tag",      type=str, default=None,
                    help="b_e tag (e.g. b035); omit to process all b_tags found.")

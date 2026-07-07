@@ -25,9 +25,12 @@ import numpy as np
 import pandas as pd
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import build_roi_order_reference, resolve_roi_order_names  # noqa: E402
 
 
@@ -370,23 +373,23 @@ def main() -> None:
     p.add_argument(
         "--subject-macro-csv",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/gradient_stats/tables/subject_macro_gradient_means.csv",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "gradient_stats", "tables", "subject_macro_gradient_means.csv")),
     )
     p.add_argument(
         "--within-tests-csv",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/gradient_stats/tables/within_system_one_sample_permutation_tests.csv",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "gradient_stats", "tables", "within_system_one_sample_permutation_tests.csv")),
     )
     p.add_argument(
         "--output-dir",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/gradient_stats/figures",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "gradient_stats", "figures")),
     )
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
     p.add_argument(
         "--mapping-csv",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/gradient_stats/tables/aal90_macro_system_mapping.csv",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "gradient_stats", "tables", "aal90_macro_system_mapping.csv")),
     )
     args = p.parse_args()
     render_violin_grid(

@@ -20,6 +20,7 @@ if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from tvbtoolkit.analysis import export_phiid_subject_inputs  # noqa: E402
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import (  # noqa: E402
     _maybe_apply_roi_reordering,
     build_roi_order_reference,
@@ -110,8 +111,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    p.add_argument("--output-root", type=str, default="results/phiid_empirical_bold_dynamic")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    p.add_argument("--output-root", type=str, default=str(doc_liege_results("phiid_empirical_bold_dynamic")))
     p.add_argument("--redundancy", type=str, default="mmi")
     p.add_argument("--roi-reorder-mode", type=str, default="aal90_fc")
     p.add_argument("--standardize", type=str, default=None)

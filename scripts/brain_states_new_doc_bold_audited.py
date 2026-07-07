@@ -66,6 +66,8 @@ except ModuleNotFoundError:  # pragma: no cover
         summarize_brain_states,
     )
 
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
+
 
 COHORTS = ("control", "emcs", "mcs", "uws", "coma")
 PALETTE = {
@@ -2261,19 +2263,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-root",
         type=str,
-        default="data/doc_patients_new_data",
+        default=str(doc_liege_raw("doc_data")),
         help="Path to new DoC dataset root.",
     )
     parser.add_argument(
         "--reference-root",
         type=str,
-        default="data/brain_act",
+        default=str(doc_liege_raw("brain_act")),
         help="Path to original/reference dataset root.",
     )
     parser.add_argument(
         "--output-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited")),
         help="Directory where outputs will be saved.",
     )
 

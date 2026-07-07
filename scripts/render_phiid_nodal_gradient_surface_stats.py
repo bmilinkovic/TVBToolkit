@@ -23,9 +23,12 @@ import pandas as pd
 from nilearn import datasets, plotting, surface
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import build_roi_order_reference, resolve_roi_order_names  # noqa: E402
 
 
@@ -310,17 +313,17 @@ def render_surface_panel(
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    p.add_argument("--results-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    p.add_argument("--results-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022")))
     p.add_argument(
         "--sig-table",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/pairwise_stats/tables/surface_gradient_roi_one_sample_tests.csv",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "pairwise_stats", "tables", "surface_gradient_roi_one_sample_tests.csv")),
     )
     p.add_argument(
         "--output-dir",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/figures/gradient_surface",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "figures", "gradient_surface")),
     )
     args = p.parse_args()
     render_surface_panel(

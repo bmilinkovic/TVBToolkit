@@ -2,7 +2,7 @@
 """Publication-ready FC and brain-state analysis for Maas psilocybin between-subject data.
 
 This workflow intentionally uses only the non-corrupted between-subject file:
-``data/drugs_data/maas_psilbetween_ts_aal116_noGSR.mat``.
+``data_drugs_maastricht/raw/drugs_data/maas_psilbetween_ts_aal116_noGSR.mat``.
 
 Outputs
 -------
@@ -68,10 +68,11 @@ except ModuleNotFoundError:  # pragma: no cover
         weighted_global_efficiency,
         weighted_modularity,
     )
+from tvbtoolkit.core.paths import drugs_raw, drugs_results  # noqa: E402
 
 
-DATA_DIR = _REPO_ROOT / "data" / "drugs_data"
-DEFAULT_OUT = _REPO_ROOT / "results" / "maas_psilbetween_fc_brain_states"
+DATA_DIR = drugs_raw("drugs_data")
+DEFAULT_OUT = drugs_results("maas_psilbetween_fc_brain_states")
 PSIL_FILE = DATA_DIR / "maas_psilbetween_ts_aal116_noGSR.mat"
 METADATA_FILE = DATA_DIR / "metadata.xlsx"
 ROI_NAMES_FILE = DATA_DIR / "aal116NodeNames.txt"

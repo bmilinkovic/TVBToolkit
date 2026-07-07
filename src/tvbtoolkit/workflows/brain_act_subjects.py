@@ -20,6 +20,7 @@ from tvbtoolkit.analysis.brain_states import brain_state_metrics_dict, summarize
 from tvbtoolkit.complexity.measures import lzc_multichannel, pci_casali_like
 from tvbtoolkit.core.config import OutputConfig, WholeBrainConfig
 from tvbtoolkit.core.io import save_npz
+from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.core.system import recommend_parallel_workers
 from tvbtoolkit.datasets.brain_act import list_subjects, load_subject_structural
 from tvbtoolkit.whole_brain.simulation import run_whole_brain_simulation
@@ -80,7 +81,7 @@ class BrainActSubjectConfig:
     """
 
     dataset_root: str | Path | None = None
-    output_root: str | Path = Path("notebooks/outputs/brain_act_subject_batches")
+    output_root: str | Path = doc_liege_results("brain_act_subject_batches")
     seeds: tuple[int, ...] = (0, 1, 2)
 
     simulation_length_ms: float = 5000.0

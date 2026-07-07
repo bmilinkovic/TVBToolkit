@@ -5,26 +5,29 @@ import argparse
 import json
 import math
 import os
+import sys
 from itertools import combinations
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import kruskal, mannwhitneyu, spearmanr
 
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
+
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_CSV = (
-    PROJECT_ROOT
-    / "notebooks"
-    / "outputs"
-    / "structural_zero_edges"
+    doc_liege_results("structural_zero_edges")
     / "brain_act_structural_zero_edges_by_subject.csv"
 )
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "notebooks" / "outputs" / "structural_zero_edges"
+DEFAULT_OUTPUT_DIR = doc_liege_results("structural_zero_edges")
 
 COHORT_ORDER = ["control", "emcs", "mcs", "uws", "coma"]
 COHORT_LABELS = {

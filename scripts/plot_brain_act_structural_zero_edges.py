@@ -27,10 +27,11 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 os.environ.setdefault("TVB_USER_HOME", str(PROJECT_ROOT / ".tvb-temp"))
 
 from tvbtoolkit.datasets.brain_act import list_subjects, load_subject_structural
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results
 
 
-DATASET_ROOT = PROJECT_ROOT / "data" / "doc_patients_new_data" / "converted_structural"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "notebooks" / "outputs" / "structural_zero_edges"
+DATASET_ROOT = doc_liege_raw("doc_data", "converted_structural")
+DEFAULT_OUTPUT_DIR = doc_liege_results("structural_zero_edges")
 
 COHORT_ORDER = ["control", "emcs", "mcs", "uws", "coma"]
 COHORT_LABELS = {

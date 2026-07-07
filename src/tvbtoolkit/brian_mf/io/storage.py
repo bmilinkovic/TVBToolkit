@@ -10,6 +10,8 @@ from typing import Any
 
 import numpy as np
 
+from tvbtoolkit.core.paths import legacy_results
+
 
 @dataclass(frozen=True)
 class ParameterSetRecord:
@@ -23,7 +25,7 @@ class ParameterSetRecord:
 
 
 def _db_dir(path: str | Path | None) -> Path:
-    return Path(path) if path is not None else Path("./data/brian_mf/param_db")
+    return Path(path) if path is not None else legacy_results("brian_mf", "param_db")
 
 
 def save_param_set(name: str, params: dict[str, Any], metadata: dict[str, Any], path: str | Path | None = None) -> Path:

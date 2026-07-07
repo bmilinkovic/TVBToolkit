@@ -22,10 +22,12 @@ SRC = PROJECT_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from tvbtoolkit.core.paths import doc_liege_raw
+
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 os.environ.setdefault("TVB_USER_HOME", str(PROJECT_ROOT / ".tvb-temp"))
 
-DATASET_ROOT = PROJECT_ROOT / "data" / "doc_data" / "converted_structural"
+DATASET_ROOT = doc_liege_raw("doc_data", "converted_structural")
 
 COHORT_TO_CONDITION = {
     "control": "CNT",

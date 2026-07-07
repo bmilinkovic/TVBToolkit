@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT="/Users/borjan/CNRS/projects/TVBToolkit"
-INPUT_DIR="$ROOT/results/phiid_empirical_bold/inputs"
-OUTPUT_DIR="$ROOT/results/phiid_empirical_bold/phiid/mmi"
+CNRS_ROOT="${CNRS_DATA_ROOT:-/Volumes/ex_data/cnrs}"
+PHIID_ROOT="${CNRS_ROOT}/data_doc_liege/results/phiid_empirical_bold"
+INPUT_DIR="$PHIID_ROOT/inputs"
+OUTPUT_DIR="$PHIID_ROOT/phiid/mmi"
 WORKERS="${1:-12}"
 LOG_FILE="${2:?log file path required}"
 MATLAB_BIN="/Applications/MATLAB_R2023b.app/bin/matlab"

@@ -30,6 +30,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from tvbtoolkit.core.paths import stimulation_raw  # noqa: E402
 from tvbtoolkit.datasets.stim_pci import (  # noqa: E402
     PciRecord,
     discover_pci_files,
@@ -342,11 +343,11 @@ def export_clean_dataset(eeg_root: Path, out_dir: Path, *, primary_only: bool = 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--eeg-root", type=Path, default=_REPO_ROOT / "data/stim_data/tdcs-eeg")
+    ap.add_argument("--eeg-root", type=Path, default=stimulation_raw("stim_data", "tdcs-eeg"))
     ap.add_argument(
         "--out-dir",
         type=Path,
-        default=_REPO_ROOT / "data/stim_data/python_clean",
+        default=stimulation_raw("stim_data", "python_clean"),
     )
     ap.add_argument("--primary-only", action="store_true")
     args = ap.parse_args()

@@ -19,6 +19,7 @@ from brain_act_hybrid_common import (
     save_json,
 )
 
+from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.complexity.measures import pci_casali_like_multi_trial
 
 
@@ -33,8 +34,8 @@ def parse_args() -> argparse.Namespace:
             "multi-trial Casali PCI with TVBSim-style parameters."
         )
     )
-    p.add_argument("--sim-pci-root", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "ba_sim_hybrid" / "shared_b" / "sims_pci")
-    p.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "06_pci_analysis_pub")
+    p.add_argument("--sim-pci-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid", "shared_b", "sims_pci"))
+    p.add_argument("--output-dir", type=Path, default=doc_liege_results("notebooks_outputs", "06_pci_analysis_pub"))
     p.add_argument("--scenario", action="append", dest="scenarios", default=None)
     p.add_argument("--b-tag", type=str, default=None,
                    help="Optional b-tag level to process, e.g. b035 or condb_doc_gradient.")

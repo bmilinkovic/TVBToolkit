@@ -37,6 +37,7 @@ from tvbtoolkit.datasets.stim_pci import (  # noqa: E402
     compute_route_pci,
     discover_pci_files,
 )
+from tvbtoolkit.core.paths import stimulation_raw, stimulation_results  # noqa: E402
 
 ROUTE_COLOR = {
     "stored": "#444444",
@@ -197,11 +198,11 @@ def make_figure(df: pd.DataFrame, out_path: Path, *, n_bootstrap: int) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--eeg-root", type=Path, default=_REPO_ROOT / "data/stim_data/tdcs-eeg")
+    ap.add_argument("--eeg-root", type=Path, default=stimulation_raw("stim_data", "tdcs-eeg"))
     ap.add_argument(
         "--out-dir",
         type=Path,
-        default=_REPO_ROOT / "results/stim_data/reconstructed_vertex_compare",
+        default=stimulation_results("stim_data", "reconstructed_vertex_compare"),
     )
     ap.add_argument("--primary-only", action="store_true")
     ap.add_argument("--n-bootstrap", type=int, default=20)

@@ -12,6 +12,7 @@ import numpy as np
 
 from brain_act_hybrid_common import BASE_PARAMETER_MODEL_NEW, PROJECT_ROOT, save_json
 
+from tvbtoolkit.core.paths import legacy_results
 from tvbtoolkit.brian_mf.adex.network import run_adex_network_simulation
 from tvbtoolkit.workflows.mean_field_sweep import MFParams, run_mf_ode
 
@@ -23,7 +24,7 @@ def parse_args() -> argparse.Namespace:
             "simulations with shared afferent noise and save 2-column row plots."
         )
     )
-    p.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "01_mean_field_sim_test")
+    p.add_argument("--output-dir", type=Path, default=legacy_results("notebooks_outputs", "01_mean_field_sim_test"))
     p.add_argument("--b-start", type=float, default=5.0)
     p.add_argument("--b-stop", type=float, default=205.0)
     p.add_argument("--b-step", type=float, default=10.0)

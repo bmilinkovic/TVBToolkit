@@ -28,8 +28,15 @@ from scipy.interpolate import Rbf, griddata
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = _REPO_ROOT / "data/stim_data/python_clean_primary/tables/d30_reconstruction_manifest.csv"
-DEFAULT_OUT = _REPO_ROOT / "results/stim_data/tep_figures"
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from tvbtoolkit.core.paths import stimulation_raw, stimulation_results  # noqa: E402
+
+DEFAULT_MANIFEST = stimulation_raw(
+    "stim_data", "python_clean_primary", "tables", "d30_reconstruction_manifest.csv"
+)
+DEFAULT_OUT = stimulation_results("stim_data", "tep_figures")
 
 
 def _loadmat(path: Path) -> dict:

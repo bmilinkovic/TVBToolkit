@@ -28,6 +28,7 @@ if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from tvbtoolkit.core.config import WholeBrainConfig  # noqa: E402
+from tvbtoolkit.core.paths import legacy_results  # noqa: E402
 from tvbtoolkit.whole_brain.simulation import run_whole_brain_simulation  # noqa: E402
 from tvbtoolkit.analysis import (  # noqa: E402
     load_three_node_phiid_index,
@@ -316,7 +317,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-root", type=str, default="results/three_node_adex_phiid_sweep")
+    parser.add_argument("--output-root", type=str, default=str(legacy_results("results", "three_node_adex_phiid_sweep")))
     parser.add_argument("--g-values", type=float, nargs="+", default=[0.0, 0.05, 0.1, 0.2, 0.3, 0.4])
     parser.add_argument(
         "--noise-values",

@@ -13,8 +13,8 @@ function phiid_empirical_bold_aal90(input_dir, output_dir, redundancy, use_paral
 %   <subject_stub>__sts_mat_idep_xtb.mat
 %
 % Example:
-%   phiid_empirical_bold_aal90('results/phiid_empirical_bold/inputs', ...
-%       'results/phiid_empirical_bold/phiid/mmi', 'mmi', true, 8)
+%   phiid_empirical_bold_aal90('/Volumes/ex_data/cnrs/data_doc_liege/results/phiid_empirical_bold/inputs', ...
+%       '/Volumes/ex_data/cnrs/data_doc_liege/results/phiid_empirical_bold/phiid/mmi', 'mmi', true, 8)
 
 if nargin < 1 || strlength(string(input_dir)) == 0
     error('input_dir is required.');

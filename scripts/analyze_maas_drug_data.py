@@ -1,6 +1,7 @@
 """Initial QC and functional-connectivity summaries for Maas drug fMRI data.
 
-The source files are MATLAB v7.3/HDF5 cell arrays in ``data/drugs_data``.
+The source files are MATLAB v7.3/HDF5 cell arrays under the external
+``data_drugs_maastricht/raw/drugs_data`` tree.
 This script decodes the cells, joins the companion metadata workbook, and writes
 small CSV summaries under ``results/maas_drug_data_initial``.
 """
@@ -8,18 +9,23 @@ small CSV summaries under ``results/maas_drug_data_initial``.
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import h5py
 import numpy as np
 import pandas as pd
 from scipy import stats
 
+from tvbtoolkit.core.paths import drugs_raw, drugs_results
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data" / "drugs_data"
-OUT_DIR = REPO_ROOT / "results" / "maas_drug_data_initial"
+DATA_DIR = drugs_raw("drugs_data")
+OUT_DIR = drugs_results("maas_drug_data_initial")
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 """Discovery, loading and reproduction of the tDCS/TMS-EEG PCI artifacts.
 
-The tDCS Stimulation dataset (``data/stim_data/tdcs-eeg``) stores, for each
+The tDCS Stimulation dataset (external
+``data_stimulation_liege/raw/stim_data/tdcs-eeg`` by default) stores, for each
 patient and session, the source-space Perturbational Complexity Index (PCI)
 products of the Liège/Milan "Droutine" pipeline (Casali et al., 2013):
 
@@ -129,7 +130,7 @@ def discover_pci_files(eeg_root: str | Path) -> list[PciRecord]:
     Parameters
     ----------
     eeg_root : path
-        The ``data/stim_data/tdcs-eeg`` directory.
+        The ``stim_data/tdcs-eeg`` raw directory.
 
     Returns
     -------

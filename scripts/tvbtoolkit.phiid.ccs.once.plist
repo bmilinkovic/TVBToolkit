@@ -11,7 +11,7 @@
     <string>-dimsu</string>
     <string>/Users/borjan/CNRS/projects/TVBToolkit/scripts/run_empirical_bold_ccs_full_once.sh</string>
     <string>12</string>
-    <string>/Users/borjan/CNRS/projects/TVBToolkit/results/phiid_empirical_bold/logs/tvbtoolkit.phiid.ccs.once.log</string>
+    <string>/Volumes/ex_data/cnrs/data_doc_liege/results/phiid_empirical_bold/logs/tvbtoolkit.phiid.ccs.once.log</string>
   </array>
 
   <key>WorkingDirectory</key>

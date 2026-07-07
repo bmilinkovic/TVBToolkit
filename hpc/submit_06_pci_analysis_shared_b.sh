@@ -12,8 +12,9 @@
 set -euo pipefail
 mkdir -p hpc/logs
 source hpc/slurm_env.sh
+CNRS_ROOT="${CNRS_DATA_ROOT:-/Volumes/ex_data/cnrs}"
 
 python notebooks/06_pci_analysis_pub.py \
-  --sim-pci-root notebooks/outputs/ba_sim_hybrid/shared_b/sims_pci \
-  --output-dir notebooks/outputs/06_pci_shared_b \
+  --sim-pci-root "${CNRS_ROOT}/data_doc_liege/results/notebooks_outputs/ba_sim_hybrid/shared_b/sims_pci" \
+  --output-dir "${CNRS_ROOT}/data_doc_liege/results/notebooks_outputs/06_pci_shared_b" \
   "$@"

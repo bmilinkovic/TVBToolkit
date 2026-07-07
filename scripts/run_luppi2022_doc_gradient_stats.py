@@ -45,6 +45,7 @@ from tvbtoolkit.analysis import (  # noqa: E402
     load_phiid_matrix,
 )
 from tvbtoolkit.analysis.luppi2022 import compute_fc_matrix  # noqa: E402
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import (  # noqa: E402
     _maybe_apply_roi_reordering,
     build_roi_order_reference,
@@ -654,11 +655,11 @@ def _plot_spin_correlation_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    p.add_argument("--manifest", type=str, default="results/phiid_empirical_bold/inputs/manifest.csv")
-    p.add_argument("--phiid-root", type=str, default="results/phiid_empirical_bold/phiid")
-    p.add_argument("--results-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022")
-    p.add_argument("--output-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/gradient_stats")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    p.add_argument("--manifest", type=str, default=str(doc_liege_results("phiid_empirical_bold", "inputs", "manifest.csv")))
+    p.add_argument("--phiid-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "phiid")))
+    p.add_argument("--results-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022")))
+    p.add_argument("--output-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "gradient_stats")))
     p.add_argument("--n-perm", type=int, default=10000)
     p.add_argument("--n-spin", type=int, default=10000)
     p.add_argument("--seed", type=int, default=7)

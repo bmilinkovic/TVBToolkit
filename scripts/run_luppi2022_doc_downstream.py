@@ -42,6 +42,7 @@ from tvbtoolkit.analysis.luppi2022 import (  # noqa: E402
     weighted_global_efficiency,
     weighted_modularity,
 )
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results, project_root  # noqa: E402
 from brain_states_new_doc_bold_audited import (  # noqa: E402
     _maybe_apply_roi_reordering,
     build_roi_order_reference,
@@ -858,12 +859,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    p.add_argument("--phiid-root", type=str, default="results/phiid_empirical_bold/phiid/mmi")
-    p.add_argument("--manifest", type=str, default="results/phiid_empirical_bold/inputs/manifest.csv")
-    p.add_argument("--averages-root", type=str, default="results/phiid_empirical_bold/averages/mmi")
-    p.add_argument("--annotation-csv", type=str, default="data/reference/aal90_luppi2022_annotations_template.csv")
-    p.add_argument("--output-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022/mmi")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    p.add_argument("--phiid-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "phiid", "mmi")))
+    p.add_argument("--manifest", type=str, default=str(doc_liege_results("phiid_empirical_bold", "inputs", "manifest.csv")))
+    p.add_argument("--averages-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "averages", "mmi")))
+    p.add_argument("--annotation-csv", type=str, default=str(project_root() / "data" / "reference" / "aal90_luppi2022_annotations_template.csv"))
+    p.add_argument("--output-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi")))
     return p
 
 

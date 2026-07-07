@@ -2,9 +2,11 @@
 set -euo pipefail
 
 ROOT="/Users/borjan/CNRS/projects/TVBToolkit"
+CNRS_ROOT="${CNRS_DATA_ROOT:-/Volumes/ex_data/cnrs}"
+PHIID_ROOT="${CNRS_ROOT}/data_doc_liege/results/phiid_empirical_bold"
 PYTHON_BIN="/Users/borjan/miniconda3/bin/python3"
 WORKERS="${1:-12}"
-LOG_FILE="${2:-$ROOT/results/phiid_empirical_bold/logs/tvbtoolkit.phiid.ccs.once.log}"
+LOG_FILE="${2:-$PHIID_ROOT/logs/tvbtoolkit.phiid.ccs.once.log}"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 exec >>"$LOG_FILE" 2>&1
@@ -25,8 +27,8 @@ cd "$ROOT"
   --matlab-workers "$WORKERS"
 
 "$PYTHON_BIN" "$ROOT/scripts/run_luppi2022_doc_downstream.py" \
-  --phiid-root "$ROOT/results/phiid_empirical_bold/phiid/ccs" \
-  --averages-root "$ROOT/results/phiid_empirical_bold/averages/ccs" \
-  --output-root "$ROOT/results/phiid_empirical_bold/downstream_luppi2022/ccs"
+  --phiid-root "$PHIID_ROOT/phiid/ccs" \
+  --averages-root "$PHIID_ROOT/averages/ccs" \
+  --output-root "$PHIID_ROOT/downstream_luppi2022/ccs"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] CCS one-shot wrapper completed"

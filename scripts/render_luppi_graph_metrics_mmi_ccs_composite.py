@@ -10,19 +10,22 @@ import sys
 import pandas as pd
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 from run_luppi2022_doc_downstream import _plot_graph_metrics_comparison_composite  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--results-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022")
+    p.add_argument("--results-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022")))
     p.add_argument(
         "--output-root",
         type=str,
-        default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/figures/graph_metrics",
+        default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "figures", "graph_metrics")),
     )
     return p
 

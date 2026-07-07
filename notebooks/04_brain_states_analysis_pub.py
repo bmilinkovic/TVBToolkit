@@ -79,6 +79,7 @@ from brain_act_hybrid_common import (
 )
 
 from tvbtoolkit.analysis.brain_states import phase_patterns
+from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.datasets.brain_act import load_subject_structural
 
 
@@ -181,9 +182,9 @@ def parse_args() -> argparse.Namespace:
             "regime and compare centroids via Hungarian assignment."
         )
     )
-    p.add_argument("--sim-root", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "ba_sim_hybrid" / "shared_b" / "sims")
+    p.add_argument("--sim-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid", "shared_b", "sims"))
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
-    p.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "04_brain_states_analysis_pub_v5")
+    p.add_argument("--output-dir", type=Path, default=doc_liege_results("notebooks_outputs", "04_brain_states_analysis_pub_v5"))
     p.add_argument("--n-states", type=int, default=5)
     # Defaults match the empirical fig7 pipeline:
     #   kmeans-seed=11, kmeans-n-init=40, kmeans-max-iter=260.

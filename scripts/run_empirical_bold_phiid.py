@@ -44,6 +44,7 @@ from tvbtoolkit.analysis import (  # noqa: E402
     plot_group_average_grid,
     save_group_average_outputs,
 )
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from brain_states_new_doc_bold_audited import (  # noqa: E402
     _maybe_apply_roi_reordering,
     build_roi_order_reference,
@@ -305,8 +306,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
-    parser.add_argument("--output-root", type=str, default="results/phiid_empirical_bold")
+    parser.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
+    parser.add_argument("--output-root", type=str, default=str(doc_liege_results("phiid_empirical_bold")))
     parser.add_argument("--redundancy", type=str, default="mmi")
     parser.add_argument("--roi-reorder-mode", type=str, default="aal90_fc")
     parser.add_argument("--standardize", type=str, default=None)

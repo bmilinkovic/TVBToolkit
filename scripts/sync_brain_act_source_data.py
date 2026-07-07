@@ -5,13 +5,19 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import sys
 from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root / "src") not in sys.path:
+    sys.path.insert(0, str(repo_root / "src"))
+
+from tvbtoolkit.core.paths import doc_liege_raw  # noqa: E402
 
 
 def main() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
     default_src = Path("/Users/borjan/code/Brain-Act/brain-act/data")
-    default_dst = repo_root / "data" / "brain_act" / "source"
+    default_dst = doc_liege_raw("brain_act", "source")
 
     parser = argparse.ArgumentParser(
         description=(
@@ -76,4 +82,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

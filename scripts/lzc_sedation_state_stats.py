@@ -5,13 +5,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import kruskal, mannwhitneyu
+
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 
 
 COHORTS = ("control", "emcs", "mcs", "uws")
@@ -370,12 +377,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--input-csv",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/empirical_markov_lzc/tables/empirical_lzc_subjects.csv",
+        default=str(
+            doc_liege_results(
+                "doc_patients_new_bold_brain_states_audited",
+                "empirical_markov_lzc",
+                "tables",
+                "empirical_lzc_subjects.csv",
+            )
+        ),
     )
     p.add_argument(
         "--output-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/empirical_markov_lzc/sedation_state_stats",
+        default=str(
+            doc_liege_results(
+                "doc_patients_new_bold_brain_states_audited",
+                "empirical_markov_lzc",
+                "sedation_state_stats",
+            )
+        ),
     )
     p.add_argument("--n-boot", type=int, default=3000)
     return p

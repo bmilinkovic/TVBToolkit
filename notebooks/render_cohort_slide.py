@@ -27,7 +27,7 @@ COND_COLORS = {
     "CNT":  "#5B8A72",
 }
 
-# (cohort, n_non_sedated, n_sedated)  from data/doc_patients_new_data
+# (cohort, n_non_sedated, n_sedated) from the external DOC raw dataset
 COHORT_DATA = {
     "COMA": (6,  4),
     "UWS":  (29, 22),

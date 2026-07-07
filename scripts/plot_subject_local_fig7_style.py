@@ -4,13 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import ttest_ind
+
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 
 
 COHORTS = ("control", "emcs", "mcs", "uws")
@@ -247,12 +254,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--input-table",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/tables/rank_aligned_state_metrics_long.csv",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited", "tables", "rank_aligned_state_metrics_long.csv")),
     )
     p.add_argument(
         "--output-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/subject_local_fig7_style",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited", "subject_local_fig7_style")),
     )
     p.add_argument("--x-col", type=str, default="sfc", choices=["sfc", "sfc_full"])
     p.add_argument("--x-label", type=str, default="SC-FC coupling (subject-specific SC)")

@@ -45,6 +45,7 @@ from brain_act_hybrid_common import (  # noqa: E402
     get_subject_jobs,
 )
 from tvbtoolkit.core.config import WholeBrainConfig  # noqa: E402
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 from tvbtoolkit.whole_brain.simulation import run_whole_brain_simulation  # noqa: E402
 from tvbtoolkit.workflows.brain_act_dual_domain_parallel import run_pci_trial_job  # noqa: E402
 from tvbtoolkit.complexity.measures import pci_casali_like_multi_trial  # noqa: E402
@@ -1150,7 +1151,7 @@ def parse_args() -> argparse.Namespace:
         ),
         default="both",
     )
-    p.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "08_pci_b_state_test")
+    p.add_argument("--output-root", type=Path, default=doc_liege_results("notebooks_outputs", "08_pci_b_state_test"))
     p.add_argument("--scenario", default="private_alpha0")
     p.add_argument("--n-trials", type=int, default=25, help="Trials per b-state for average_aal90 mode.")
     p.add_argument("--smoke-trials", type=int, default=1, help="Trials per subject for subject_smoke mode.")

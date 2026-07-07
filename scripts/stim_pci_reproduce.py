@@ -3,7 +3,7 @@
 
 Deliverable (validated anchor for downstream complexity/entropy/emergence work):
 
-1. Discover every ``Droutine_<PRE|POST>_PCI.mat`` under ``data/stim_data/tdcs-eeg``.
+1. Discover every ``Droutine_<PRE|POST>_PCI.mat`` under the external stimulation raw tree.
 2. Recompute the PCI scalar from the stored ``binJ`` with the toolkit's own
    Casali engine and check it against the value the original pipeline saved.
 3. Emit a tidy per-subject / per-session table (PCI pre- vs post-tDCS) and a
@@ -44,6 +44,7 @@ from tvbtoolkit.datasets.stim_pci import (  # noqa: E402
     reproduce_all,
     reproduction_to_dict,
 )
+from tvbtoolkit.core.paths import stimulation_raw, stimulation_results  # noqa: E402
 
 PCI_CUTOFF = 0.31  # Casali et al. (2013) consciousness-compatible threshold.
 COND_ORDER = ["pre", "post"]
@@ -207,9 +208,9 @@ def summarise(df: pd.DataFrame) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--eeg-root", type=Path,
-                    default=_REPO_ROOT / "data/stim_data/tdcs-eeg")
+                    default=stimulation_raw("stim_data", "tdcs-eeg"))
     ap.add_argument("--out-dir", type=Path,
-                    default=_REPO_ROOT / "results/stim_data/pci_reproduction")
+                    default=stimulation_results("stim_data", "pci_reproduction"))
     ap.add_argument("--primary-only", action="store_true",
                     help="Exclude reanalysis/test lineages (Second_Analysis, Test NotMNI).")
     args = ap.parse_args()

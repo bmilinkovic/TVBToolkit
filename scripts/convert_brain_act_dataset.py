@@ -8,6 +8,7 @@ from pathlib import Path
 
 try:
     from tvbtoolkit.datasets.brain_act import convert_brain_act_dataset
+    from tvbtoolkit.core.paths import doc_liege_raw
 except ModuleNotFoundError:
     import sys
 
@@ -16,10 +17,12 @@ except ModuleNotFoundError:
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
     from tvbtoolkit.datasets.brain_act import convert_brain_act_dataset
+    from tvbtoolkit.core.paths import doc_liege_raw
 
 
 def main() -> None:
-    default_source = Path(__file__).resolve().parents[1] / "data" / "brain_act" / "source"
+    default_source = doc_liege_raw("brain_act", "source")
+    default_output = doc_liege_raw("brain_act", "converted")
     parser = argparse.ArgumentParser(
         description=(
             "Convert Brain-Act AAL90 subject structural connectomes/tract lengths into "
@@ -37,8 +40,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-dir",
-        required=True,
-        help="Output directory for converted dataset files (atlas.npz, subjects_*.npz, index.json).",
+        default=str(default_output),
+        help=(
+            "Output directory for converted dataset files "
+            f"(default: {default_output})."
+        ),
     )
     parser.add_argument(
         "--atlas-lookup-name",

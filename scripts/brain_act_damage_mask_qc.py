@@ -10,11 +10,17 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from tvbtoolkit.datasets.brain_act import list_subjects, load_subject_structural
 
 
@@ -38,11 +44,11 @@ def _upper_tri_stats(c: np.ndarray, l: np.ndarray) -> dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-root", type=str, default=None)
+    parser.add_argument("--dataset-root", type=str, default=str(doc_liege_raw("brain_act", "converted")))
     parser.add_argument(
         "--output-root",
         type=str,
-        default="notebooks/outputs/brain_act_mask_qc",
+        default=str(doc_liege_results("brain_act_mask_qc")),
         help="Where to save QC reports and figure.",
     )
     parser.add_argument(

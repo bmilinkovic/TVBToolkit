@@ -41,6 +41,7 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from tvbtoolkit.analysis import PUBLICATION_COHORT_ORDER, load_phiid_index, load_phiid_matrix  # noqa: E402
 from tvbtoolkit.analysis.luppi2022 import weighted_global_efficiency, weighted_modularity  # noqa: E402
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 
 
 COHORT_ORDER = list(PUBLICATION_COHORT_ORDER)
@@ -501,11 +502,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--results-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022")
-    p.add_argument("--phiid-root", type=str, default="results/phiid_empirical_bold/phiid")
-    p.add_argument("--manifest", type=str, default="results/phiid_empirical_bold/inputs/manifest.csv")
-    p.add_argument("--figures-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/figures")
-    p.add_argument("--output-root", type=str, default="results/phiid_empirical_bold/downstream_luppi2022/mmi_ccs_comparison/pairwise_stats")
+    p.add_argument("--results-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022")))
+    p.add_argument("--phiid-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "phiid")))
+    p.add_argument("--manifest", type=str, default=str(doc_liege_results("phiid_empirical_bold", "inputs", "manifest.csv")))
+    p.add_argument("--figures-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "figures")))
+    p.add_argument("--output-root", type=str, default=str(doc_liege_results("phiid_empirical_bold", "downstream_luppi2022", "mmi_ccs_comparison", "pairwise_stats")))
     p.add_argument("--n-perm", type=int, default=10000)
     p.add_argument("--seed", type=int, default=11)
     return p

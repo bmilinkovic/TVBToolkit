@@ -29,6 +29,7 @@ os.environ.setdefault("TVB_USER_HOME", str((_REPO_ROOT / ".tvb-temp").resolve())
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 from tvbtoolkit.complexity.measures import lzc_multichannel, lzc_single_channel  # noqa: E402
 
 from brain_states_new_doc_bold_audited import (  # noqa: E402
@@ -506,16 +507,16 @@ def run(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
     p.add_argument(
         "--pooled-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/legacy_style_repro",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited", "legacy_style_repro")),
     )
     p.add_argument(
         "--output-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/empirical_markov_lzc",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited", "empirical_markov_lzc")),
     )
     p.add_argument("--k", type=int, default=None, help="Optional override for pooled k (defaults to k* from ipvc_per_k.json).")
     p.add_argument("--roi-reorder-mode", type=str, default="aal90_fc", choices=["auto", "none", "aal90_fc", "aal90_sc", "aal90_both"])

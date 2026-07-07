@@ -14,12 +14,19 @@ import argparse
 import csv
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_ROOT = Path("data/stim_data")
-DEFAULT_OUT = Path("data/stim_data/python_clean_primary")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from tvbtoolkit.core.paths import stimulation_raw  # noqa: E402
+
+DEFAULT_ROOT = stimulation_raw("stim_data")
+DEFAULT_OUT = stimulation_raw("stim_data", "python_clean_primary")
 DEFAULT_SUFFIXES = {
     ".csv",
     ".dcm",

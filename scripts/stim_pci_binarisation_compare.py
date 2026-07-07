@@ -48,6 +48,7 @@ from tvbtoolkit.complexity.pci_casali import (  # noqa: E402
     pci_norm_factor,
     sort_binJ,
 )
+from tvbtoolkit.core.paths import stimulation_results  # noqa: E402
 
 ROUTE_COLOR = {"ground truth": "#444444", "tvbsim": "#d1495b", "casali": "#0e9aa7"}
 
@@ -201,7 +202,7 @@ def _figure(signal, truth, tv_post, ca_post, onset, res, path: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", type=Path,
-                    default=_REPO_ROOT / "results/stim_data/binarisation_compare")
+                    default=stimulation_results("stim_data", "binarisation_compare"))
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 

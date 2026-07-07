@@ -21,6 +21,7 @@ from brain_act_hybrid_common import (
     save_json,
 )
 
+from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.workflows.brain_act_dual_domain_parallel import (
     run_pci_trial_job,
     worker_initializer,
@@ -70,7 +71,7 @@ def parse_args() -> argparse.Namespace:
         )
     )
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
-    p.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "notebooks" / "outputs" / "ba_sim_hybrid")
+    p.add_argument("--output-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid"))
     p.add_argument("--workers", type=int, default=max(1, int(round((os.cpu_count() or 8) * 0.8))))
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true",

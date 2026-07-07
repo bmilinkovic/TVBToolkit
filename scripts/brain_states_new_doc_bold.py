@@ -8,7 +8,7 @@ used in earlier Brain-Act work:
 - n_init (subject clustering) = 20
 - default summarize_brain_states pipeline/backend
 
-It loads BOLD time series from `data/doc_patients_new_data`, runs subject-level
+It loads BOLD time series from the external DOC raw tree, runs subject-level
 brain-state extraction, aligns local states to shared templates, computes group
 summaries/statistics, and writes publication-style figures + CSV outputs.
 """
@@ -52,6 +52,8 @@ except ModuleNotFoundError:  # pragma: no cover
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
     from tvbtoolkit import align_states_to_templates, fit_state_templates, summarize_brain_states
+
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 
 
 def set_publication_style() -> None:
@@ -911,13 +913,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-root",
         type=str,
-        default="data/doc_patients_new_data",
+        default=str(doc_liege_raw("doc_data")),
         help="Path to the new DoC dataset root.",
     )
     parser.add_argument(
         "--output-root",
         type=str,
-        default="notebooks/outputs/doc_patients_new_bold_brain_states",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states")),
         help="Directory where metrics and figures are saved.",
     )
     parser.add_argument("--n-states", type=int, default=5, help="Number of brain states/templates.")

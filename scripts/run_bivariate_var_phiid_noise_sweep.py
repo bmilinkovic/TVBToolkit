@@ -32,6 +32,7 @@ from tvbtoolkit.analysis import (  # noqa: E402
     summarize_sweep,
     sweep_long_form,
 )
+from tvbtoolkit.core.paths import legacy_results  # noqa: E402
 
 
 def build_matlab_command(
@@ -195,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         type=str,
-        default="results/phiid_var_bivariate_noise_sweep",
+        default=str(legacy_results("results", "phiid_var_bivariate_noise_sweep")),
     )
     parser.add_argument("--noise-levels", type=float, nargs="+", default=[0.0, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2])
     parser.add_argument("--measures", nargs="+", default=["mmi", "ccs"])

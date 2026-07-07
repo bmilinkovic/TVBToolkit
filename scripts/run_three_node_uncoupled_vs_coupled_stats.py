@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import binomtest
 
 from tvbtoolkit.analysis import plot_three_node_hypothesis_clean
+from tvbtoolkit.core.paths import legacy_results
 
 NATIVE_NOISE_RANGE = (5e-5, 3e-4)
 
@@ -103,7 +104,7 @@ def _annotate_figure(fig: plt.Figure, axes: np.ndarray, stats_df: pd.DataFrame) 
 
 
 def main() -> None:
-    root = Path("/Users/borjan/CNRS/projects/TVBToolkit/results/three_node_adex_phiid_g_noise_sweep_30x30")
+    root = legacy_results("results", "three_node_adex_phiid_g_noise_sweep_30x30")
     avg_df = pd.read_pickle(root / "tables" / "averaged_matrices.pkl")
     contrast_df = _build_contrast_frame(avg_df)
     stats_df = _summarize_tests(contrast_df)

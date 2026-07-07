@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,6 +30,8 @@ import pandas as pd
 from scipy.spatial.distance import squareform
 from scipy.stats import ttest_ind
 from sklearn.cluster import KMeans
+
+from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 
 from brain_states_new_doc_bold_audited import (
     SubjectRecord,
@@ -1019,11 +1026,11 @@ def run(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data-root", type=str, default="data/doc_patients_new_data")
+    p.add_argument("--data-root", type=str, default=str(doc_liege_raw("doc_data")))
     p.add_argument(
         "--output-root",
         type=str,
-        default="results/doc_patients_new_bold_brain_states_audited/legacy_style_repro_current_palette",
+        default=str(doc_liege_results("doc_patients_new_bold_brain_states_audited", "legacy_style_repro_current_palette")),
     )
     p.add_argument("--include-coma", action="store_true", help="Include acute coma and acute sedated coma cohorts.")
 

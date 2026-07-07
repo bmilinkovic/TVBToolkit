@@ -10,7 +10,12 @@ If BOLD columns are present and finite, figures are generated in dual-domain lay
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import numpy as np
 import pandas as pd
@@ -18,6 +23,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from scipy.stats import mannwhitneyu, spearmanr, linregress
+
+from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 
 
 def set_publication_style() -> None:
@@ -261,7 +268,7 @@ def as_2d_axes(axes, n_rows: int, n_cols: int):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, default="notebooks/outputs/ba_rates")
+    ap.add_argument("--root", type=str, default=str(doc_liege_results("notebooks_outputs", "ba_rates")))
     args = ap.parse_args()
 
     set_publication_style()
