@@ -39,8 +39,10 @@ CONDITION_B_SCENARIOS=(
 )
 
 SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_hybrid/condition_b/sims"
+DATASET_ROOT="$(resolve_tvb_dataset_root)"
 
 echo "[05] sim_root=${SIM_ROOT}"
+echo "[05] dataset_root=${DATASET_ROOT}"
 echo "[05] scenarios=${#CONDITION_B_SCENARIOS[@]}"
 echo "[05] running as one exclusive single-node job; walltime is partition max"
 
@@ -49,6 +51,7 @@ for SCENARIO in "${CONDITION_B_SCENARIOS[@]}"; do
   echo "[05] START scenario=${SCENARIO} output_dir=${OUTPUT_DIR}"
   python notebooks/05_lzc_analysis_pub.py \
     --sim-root "${SIM_ROOT}" \
+    --dataset-root "${DATASET_ROOT}" \
     --output-dir "${OUTPUT_DIR}" \
     --scenario "${SCENARIO}" \
     "$@"

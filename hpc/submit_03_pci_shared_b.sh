@@ -12,8 +12,12 @@
 set -euo pipefail
 mkdir -p hpc/logs
 source hpc/slurm_env.sh
+DATASET_ROOT="$(resolve_tvb_dataset_root)"
+
+echo "[03] dataset_root=${DATASET_ROOT}"
 
 python notebooks/03_pci_trial_sims_hybrid.py \
+  --dataset-root "${DATASET_ROOT}" \
   --sweep-mode shared_b \
   --workers "${SLURM_CPUS_PER_TASK}" \
   "$@"

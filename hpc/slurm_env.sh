@@ -59,3 +59,35 @@ case "$(which python)" in
     exit 3
     ;;
 esac
+
+resolve_tvb_dataset_root() {
+  if [ -n "${TVB_DATASET_ROOT:-}" ]; then
+    if [ -f "${TVB_DATASET_ROOT}/index.json" ]; then
+      printf '%s\n' "${TVB_DATASET_ROOT}"
+      return 0
+    fi
+    echo "ERROR: TVB_DATASET_ROOT is set but index.json was not found:" >&2
+    echo "       ${TVB_DATASET_ROOT}/index.json" >&2
+    return 7
+  fi
+
+  local candidates=(
+    "${HOME}/doc_data/converted_structural"
+    "${HOME}/data_doc_liege/raw/doc_data/converted_structural"
+    "${TVB_REPO}/data/doc_data/converted_structural"
+    "${TVB_REPO}/data/doc_patients_new_data/converted_structural"
+    "${TVB_REPO}/data/brain_act/converted"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [ -f "${candidate}/index.json" ]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "ERROR: Could not find converted structural dataset index.json." >&2
+  echo "       Set TVB_DATASET_ROOT to the folder containing index.json, e.g.:" >&2
+  echo "       export TVB_DATASET_ROOT=/home/bmilinkovic/doc_data/converted_structural" >&2
+  return 7
+}

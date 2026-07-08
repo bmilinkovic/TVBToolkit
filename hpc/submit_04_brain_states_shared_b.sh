@@ -34,9 +34,13 @@ esac
 
 SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_hybrid/shared_b/sims"
 OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/04_brain_states_shared_b_${B_TAG}_${SCENARIO}"
+DATASET_ROOT="$(resolve_tvb_dataset_root)"
+
+echo "[04] dataset_root=${DATASET_ROOT}"
 
 python notebooks/04_brain_states_analysis_pub.py \
   --sim-root "${SIM_ROOT}" \
+  --dataset-root "${DATASET_ROOT}" \
   --output-dir "${OUTPUT_DIR}" \
   --b-tag "${B_TAG}" \
   --scenario "${SCENARIO}" \
