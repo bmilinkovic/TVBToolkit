@@ -43,14 +43,17 @@ from brain_act_hybrid_common import (  # noqa: E402
     SCENARIOS,
     get_subject_jobs,
 )
-from tvbtoolkit.brian_mf.receptors import get_5ht2a_aal90  # noqa: E402
 from tvbtoolkit.complexity.measures import pci_casali_like_multi_trial  # noqa: E402
 from tvbtoolkit.core.config import WholeBrainConfig  # noqa: E402
 from tvbtoolkit.core.paths import doc_liege_results  # noqa: E402
 from tvbtoolkit.datasets.brain_act import load_subject_structural  # noqa: E402
 from tvbtoolkit.whole_brain.simulation import run_whole_brain_simulation  # noqa: E402
 from tvbtoolkit.workflows.brain_act_dual_domain_parallel import _apply_damage_parity, worker_initializer  # noqa: E402
-from tvbtoolkit.workflows.pharmacology import el_eff_from_gK_gNa, leak_to_conductances  # noqa: E402
+from tvbtoolkit.workflows.pharmacology import (  # noqa: E402
+    el_eff_from_gK_gNa,
+    get_5ht2a_aal90,
+    leak_to_conductances,
+)
 
 
 CONDITION_B_GRADIENT = {

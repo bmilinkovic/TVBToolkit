@@ -2,7 +2,37 @@
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
+
 import numpy as np
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_HANSEN_AAL90_CSV = _REPO_ROOT / "data" / "receptors" / "hansen_receptors_aal90.csv"
+_5HT2A_TRACERS = {
+    "cimbi": "5HT2a_cimbi_hc29_beliveau",
+    "savli": "5HT2a_alt_hc19_savli",
+    "talbot": "5HT2a_mdl_hc3_talbot",
+}
+
+
+def get_5ht2a_aal90(
+    tracer: str = "cimbi",
+    csv_path: str | Path | None = None,
+) -> np.ndarray:
+    """Load a max-scaled AAL-90 5-HT2A map without requiring Brian2."""
+    if tracer not in _5HT2A_TRACERS:
+        raise ValueError(f"tracer must be one of {list(_5HT2A_TRACERS)}; got {tracer!r}")
+
+    path = Path(csv_path) if csv_path is not None else _HANSEN_AAL90_CSV
+    column = _5HT2A_TRACERS[tracer]
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    if len(rows) != 90:
+        raise ValueError(f"Expected 90 AAL regions in {path}; found {len(rows)}")
+    return np.asarray([float(row[column]) for row in rows], dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -140,4 +170,3 @@ def receptor_to_gk_profile(gk_start: float, gk_end: float, receptors: np.ndarray
     if np.allclose(receptors.max(), receptors.min()):
         return np.full_like(receptors, fill_value=float(gk_start))
     return np.interp(receptors, [receptors.min(), receptors.max()], [gk_start, gk_end])
-
