@@ -13,7 +13,9 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
-export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
+# TVB is installed in the cluster user site for the current HPC environment.
+# The serotonergic workflow avoids its optional Brian2 dependency directly.
+unset PYTHONNOUSERSITE
 export MPLCONFIGDIR="${MPLCONFIGDIR:-${TVB_REPO}/.cache/matplotlib}"
 export TVB_USER_HOME="${TVB_USER_HOME:-${TVB_REPO}/.tvb-temp}"
 
