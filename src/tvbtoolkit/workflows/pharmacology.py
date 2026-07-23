@@ -20,8 +20,25 @@ _5HT2A_TRACERS = {
 def get_5ht2a_aal90(
     tracer: str = "cimbi",
     csv_path: str | Path | None = None,
+    *,
+    target_labels: np.ndarray | list[str] | tuple[str, ...] | None = None,
 ) -> np.ndarray:
-    """Load a max-scaled AAL-90 5-HT2A map without requiring Brian2."""
+    """Load a max-scaled AAL-90 5-HT2A map without requiring Brian2.
+
+    Parameters
+    ----------
+    tracer
+        PET tracer key.
+    csv_path
+        Optional receptor-table override.
+    target_labels
+        Optional AAL90 labels in the ordering required by the consumer.  The
+        Hansen table is stored in interleaved left/right order, whereas some
+        structural datasets use a left-then-right ordering.  When labels are
+        supplied, values are joined by region name and returned in exactly the
+        requested order.  Omitting this argument preserves the source-table
+        order for backward compatibility.
+    """
     if tracer not in _5HT2A_TRACERS:
         raise ValueError(f"tracer must be one of {list(_5HT2A_TRACERS)}; got {tracer!r}")
 
@@ -32,7 +49,43 @@ def get_5ht2a_aal90(
 
     if len(rows) != 90:
         raise ValueError(f"Expected 90 AAL regions in {path}; found {len(rows)}")
-    return np.asarray([float(row[column]) for row in rows], dtype=float)
+    if not rows or column not in rows[0]:
+        raise ValueError(f"Receptor column {column!r} was not found in {path}")
+
+    values = np.asarray([float(row[column]) for row in rows], dtype=float)
+    if values.shape != (90,) or not np.isfinite(values).all():
+        raise ValueError(f"Expected 90 finite receptor values in {path}")
+    if target_labels is None:
+        return values
+
+    # The first column in the distributed Hansen CSV is an unnamed index
+    # containing the AAL region labels.
+    label_key = "" if "" in rows[0] else next(
+        (key for key in rows[0] if str(key).strip().lower() in {"region", "label", "roi"}),
+        None,
+    )
+    if label_key is None:
+        raise ValueError(f"Could not identify the AAL label column in {path}")
+
+    source_labels = [str(row[label_key]).strip() for row in rows]
+    if len(set(source_labels)) != len(source_labels):
+        raise ValueError(f"Duplicate AAL labels found in {path}")
+    value_by_label = dict(zip(source_labels, values, strict=True))
+
+    requested = [str(label).strip() for label in np.asarray(target_labels).reshape(-1)]
+    if len(requested) != 90:
+        raise ValueError(f"Expected 90 target AAL labels; found {len(requested)}")
+    if len(set(requested)) != len(requested):
+        raise ValueError("Target AAL labels must be unique.")
+
+    missing = [label for label in requested if label not in value_by_label]
+    unexpected = [label for label in source_labels if label not in set(requested)]
+    if missing or unexpected:
+        raise ValueError(
+            f"Could not align target AAL labels to {path}; "
+            f"missing={missing[:5]}, unexpected={unexpected[:5]}"
+        )
+    return np.asarray([value_by_label[label] for label in requested], dtype=float)
 
 
 # ---------------------------------------------------------------------------

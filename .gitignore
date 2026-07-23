@@ -31,6 +31,10 @@ notebooks/figs/
 notebooks/data/
 results/
 figures/
+output/
+outputs/
+latex/
+tmp/
 
 # Local datasets / external reference data
 data/

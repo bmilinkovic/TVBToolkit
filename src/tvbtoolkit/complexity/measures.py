@@ -473,9 +473,8 @@ def pci_casali_like_multi_trial(
 
     ``binarise_method`` selects the binarization route ("tvbsim" default, or
     "casali" for the paper-faithful bootstrap route). Under ``"casali"`` the
-    trials are jointly reduced to a single trial-averaged ``binJ`` and one PCI
-    value is returned (with ``pci_per_trial`` holding that single value),
-    matching the empirical single-matrix convention.
+    aligned trials are retained for bootstrap threshold estimation, jointly
+    reduced to one trial-averaged ``binJ``, and one PCI value is returned.
 
     This is the exact multi-trial parity implementation matching TVBSim's
     ``_calculate_PCI_seed_subset`` and ``parallelized_PCI`` workflow.
@@ -521,9 +520,13 @@ def pci_casali_like_multi_trial(
     Returns
     -------
     mean_pci : float
-        Mean PCI across all trials (consistent with TVBSim reporting).
-    pci_per_trial : np.ndarray
-        Per-trial PCI values, shape ``(n_trials,)``.
+        With ``binarise_method="tvbsim"``, mean PCI across trials. With
+        ``binarise_method="casali"``, the single PCI of the trial-averaged
+        response.
+    pci_values : np.ndarray
+        Per-trial PCI values with shape ``(n_trials,)`` for ``"tvbsim"``.
+        For ``"casali"``, a singleton array containing the one
+        trial-averaged PCI value.
 
     Notes
     -----
@@ -613,7 +616,7 @@ def pci_casali_like_multi_trial(
             pci = float(lz_complexity_2d(binJs) / max(pci_norm_factor(binJs), np.finfo(float).eps))
         else:
             pci = 0.0
-        return pci, np.full(n_trials, pci, dtype=float)
+        return pci, np.asarray([pci], dtype=float)
 
     # ---- Joint binarization (pre-stimulus baseline pooled across trials) ----
     # t_stim = nbins_analysis  →  pre-stimulus is [:, :, :nbins_analysis]

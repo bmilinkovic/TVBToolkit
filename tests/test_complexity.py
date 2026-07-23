@@ -94,7 +94,7 @@ def test_unknown_binarise_method_raises():
         )
 
 
-def test_multi_trial_casali_returns_one_value_per_input_trial():
+def test_multi_trial_casali_returns_one_trial_averaged_value():
     rng = np.random.default_rng(5)
     trials = rng.normal(size=(4, 10, 100))
 
@@ -108,5 +108,25 @@ def test_multi_trial_casali_returns_one_value_per_input_trial():
     )
 
     assert np.isfinite(pci)
-    assert per_trial.shape == (4,)
-    assert np.allclose(per_trial, pci)
+    assert per_trial.shape == (1,)
+    assert per_trial[0] == pci
+
+
+def test_multi_trial_casali_uses_the_evoked_trial_average():
+    rng = np.random.default_rng(6)
+    trial = rng.normal(size=(8, 80))
+    # Every baseline-corrected deflection has an equal and opposite partner.
+    # A mean of per-trial PCI values would not generally cancel this way.
+    trials = np.stack([trial, -trial], axis=0)
+
+    pci, values = pci_casali_like_multi_trial(
+        trials,
+        stimulation_index=40,
+        t_analysis_ms=40.0,
+        dt_ms=1.0,
+        binarise_method="casali",
+        binarise_kwargs={"n_bootstrap": 20, "seed": 11},
+    )
+
+    assert pci == 0.0
+    np.testing.assert_array_equal(values, np.asarray([0.0]))
