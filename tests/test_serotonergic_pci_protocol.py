@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -13,7 +14,10 @@ from scripts import run_serotonergic_pci_pilot as sero
 
 def _write_trial(path, *, onset_ms: float, impulse_index: int) -> None:
     time_ms = np.arange(0.0, 1000.0, 10.0)
-    rate = np.zeros((time_ms.size, 3), dtype=float)
+    phase = np.asarray([0.0, 0.7, 1.4])
+    rate = 0.01 * np.sin(
+        time_ms[:, np.newaxis] / 37.0 + phase[np.newaxis, :]
+    )
     rate[impulse_index, 0] = 1.0
     np.savez_compressed(
         path,
@@ -367,6 +371,11 @@ def test_production_defaults_lock_one_hundred_casali_trials() -> None:
     assert args.stim_region_label == ["Supp_Motor_Area_L"]
     assert args.receptor_tracer == "cimbi"
     assert args.pci_binarise_method == "casali"
+    assert args.pci_significance_method == "pre_post_swap"
+    assert args.pci_bootstrap_replicates == 1000
+    assert args.pci_alpha == 0.05
+    assert args.pci_response_start_ms == 8.0
+    assert args.pci_min_source_entropy == 0.08
     assert args.simulate_baseline is True
     assert args.split_model_all_occupancies is True
 
@@ -419,6 +428,182 @@ def test_protocol_fingerprint_ignores_execution_only_fields() -> None:
     assert sero._protocol_fingerprint(first) == sero._protocol_fingerprint(second)
     second["stim_region_labels"] = ["Hippocampus_L"]
     assert sero._protocol_fingerprint(first) != sero._protocol_fingerprint(second)
+
+
+def _split_fingerprint_manifest() -> dict:
+    return {
+        "script": "scripts/run_serotonergic_pci_full.py",
+        "protocol_version": sero.PROTOCOL_VERSION,
+        "dataset_root": "/immutable/dataset",
+        "baseline_root": "/unused/baseline",
+        "output_root": "/simulation/cache",
+        "scenario": "private_alpha0",
+        "subjects": [
+            {
+                "cohort": "emcs",
+                "condition": "EMCS",
+                "subject_id": "e0001",
+            }
+        ],
+        "trial_seeds": [0, 1],
+        "n_trials": 2,
+        "occupancies": [0.0, 0.766],
+        "t_analysis_ms": 300.0,
+        "trial_sim_ms": 8000.0,
+        "stim_amplitude": 0.00030,
+        "stim_duration_ms": 10.0,
+        "stim_region_labels": ["Supp_Motor_Area_L"],
+        "receptor_csv_sha256": "c" * 64,
+        "receptor_map_sha256": "r" * 64,
+        "pci_binarise_method": "casali",
+        "pci_significance_method": "trial_bootstrap",
+        "pci_bootstrap_replicates": 500,
+        "pci_alpha": 0.01,
+        "pci_bootstrap_seed": 0,
+        "workers": 48,
+        "overwrite": False,
+    }
+
+
+def _with_split_fingerprints(manifest: dict) -> dict:
+    result = dict(manifest)
+    result["analysis_protocol_version"] = sero.ANALYSIS_PROTOCOL_VERSION
+    result["simulation_fingerprint"] = sero._simulation_fingerprint(result)
+    result["protocol_fingerprint"] = result["simulation_fingerprint"]
+    result["analysis_fingerprint"] = sero._analysis_fingerprint(result)
+    return result
+
+
+def test_analysis_changes_do_not_change_simulation_fingerprint() -> None:
+    first = _with_split_fingerprints(_split_fingerprint_manifest())
+    changed = _split_fingerprint_manifest()
+    changed.update(
+        {
+            "pci_significance_method": "pre_post_swap",
+            "pci_bootstrap_replicates": 1000,
+            "pci_alpha": 0.05,
+            "pci_response_window_ms": [8.0, 300.0],
+            "pci_min_source_entropy": 0.08,
+        }
+    )
+    second = _with_split_fingerprints(changed)
+
+    assert (
+        first["simulation_fingerprint"]
+        == second["simulation_fingerprint"]
+    )
+    assert first["analysis_fingerprint"] != second["analysis_fingerprint"]
+
+
+def test_legacy_manifest_is_reused_with_its_npz_fingerprint(tmp_path) -> None:
+    legacy = _split_fingerprint_manifest()
+    legacy["protocol_fingerprint"] = "legacy-whole-run-fingerprint"
+    path = tmp_path / "logs" / "run_manifest.json"
+    path.parent.mkdir(parents=True)
+    original_bytes = (
+        "{\n  "
+        + json.dumps(legacy, sort_keys=True)[1:-1]
+        + "\n}\n"
+    ).encode("utf-8")
+    path.write_bytes(original_bytes)
+
+    requested = _split_fingerprint_manifest()
+    requested.update(
+        {
+            "pci_significance_method": "pre_post_swap",
+            "pci_bootstrap_replicates": 1000,
+            "pci_alpha": 0.05,
+            "pci_response_window_ms": [8.0, 300.0],
+            "pci_min_source_entropy": 0.08,
+        }
+    )
+    requested = _with_split_fingerprints(requested)
+    source = sero._write_or_validate_manifest(
+        path,
+        requested,
+        overwrite=False,
+    )
+
+    assert sero._trial_protocol_fingerprint(source) == (
+        "legacy-whole-run-fingerprint"
+    )
+    assert path.read_bytes() == original_bytes
+    assert (
+        sero._manifest_simulation_fingerprint(source)
+        == requested["simulation_fingerprint"]
+    )
+
+
+def test_legacy_manifest_rejects_incompatible_simulation_change(tmp_path) -> None:
+    legacy = _split_fingerprint_manifest()
+    legacy["protocol_fingerprint"] = "legacy-whole-run-fingerprint"
+    path = tmp_path / "run_manifest.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    incompatible = _split_fingerprint_manifest()
+    incompatible["stim_amplitude"] = 0.00045
+    incompatible = _with_split_fingerprints(incompatible)
+
+    with pytest.raises(RuntimeError, match="different serotonergic simulation"):
+        sero._write_or_validate_manifest(
+            path,
+            incompatible,
+            overwrite=False,
+        )
+
+
+def test_analysis_outputs_are_versioned_and_source_manifest_is_immutable(
+    tmp_path,
+) -> None:
+    source = _split_fingerprint_manifest()
+    source["protocol_fingerprint"] = "legacy-whole-run-fingerprint"
+    source_path = tmp_path / "logs" / "run_manifest.json"
+    source_path.parent.mkdir(parents=True)
+    source_bytes = (
+        json.dumps(source, indent=3, sort_keys=False) + "\n\n"
+    ).encode("utf-8")
+    source_path.write_bytes(source_bytes)
+
+    requested = _with_split_fingerprints(_split_fingerprint_manifest())
+    requested["output_root"] = str(tmp_path)
+    analysis_root = sero._resolve_analysis_output_root(
+        tmp_path,
+        requested,
+    )
+    assert analysis_root == (
+        tmp_path / "analyses" / requested["analysis_fingerprint"]
+    )
+    assert analysis_root != tmp_path
+
+    analysis_manifest = sero._build_analysis_manifest(
+        requested,
+        source,
+        source_manifest_path=source_path,
+        output_root=analysis_root,
+    )
+    assert analysis_manifest["source_run_manifest_sha256"] == (
+        hashlib.sha256(source_bytes).hexdigest()
+    )
+    analysis_path = analysis_root / "logs" / "analysis_manifest.json"
+    sero._write_or_validate_analysis_manifest(
+        analysis_path,
+        analysis_manifest,
+    )
+    assert source_path.read_bytes() == source_bytes
+    assert analysis_path.is_file()
+
+    source_path.write_bytes(source_bytes + b" ")
+    changed_source_hash = sero._build_analysis_manifest(
+        requested,
+        source,
+        source_manifest_path=source_path,
+        output_root=analysis_root,
+    )
+    with pytest.raises(RuntimeError, match="source_run_manifest_sha256"):
+        sero._write_or_validate_analysis_manifest(
+            analysis_path,
+            changed_source_hash,
+        )
 
 
 def test_resolve_stim_regions_uses_dataset_label_order(tmp_path) -> None:

@@ -9,6 +9,12 @@ TVBSim's PCI pipeline:
 - ``lz_complexity_2d``
 - ``pci_norm_factor``
 
+It also provides ``binarise_signals_casali``, whose production default is an
+independent implementation of the within-trial pre/post-block permutation
+described by Pantazis et al. (2005) and adopted for source-level TMS/EEG
+analysis by Casali et al. (2010). The older TVBSim and baseline-only nulls are
+retained for explicit sensitivity analyses.
+
 Attribution
 -----------
 Ported/adapted from TVBSim reference implementations:
@@ -21,10 +27,53 @@ Original TVBSim PCI implementation based on Casali et al. (2013).
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import dataclass
+
 import numpy as np
 
 
 _EPS = np.finfo(float).eps
+
+
+@dataclass(frozen=True)
+class CasaliSignificanceResult:
+    """Result of trial-averaged source-significance estimation.
+
+    The compatibility fields at the start of this dataclass are retained for
+    existing callers.  Canonical pre/post permutations additionally expose the
+    time-resolved thresholds, corrected P values, normalization statistics and
+    randomization provenance required to audit the inferential result.
+    """
+
+    binary: np.ndarray
+    averaged_response: np.ndarray
+    threshold: float
+    null_maxima: np.ndarray
+    significance_method: str
+    n_surrogates: int
+    alpha: float
+    two_sided: bool
+    threshold_by_time: np.ndarray
+    corrected_p_values: np.ndarray
+    observed_statistic: np.ndarray
+    baseline_mean: np.ndarray
+    baseline_sd: np.ndarray
+    fwer_scope: str
+    seed: int | None
+    rng_bit_generator: str
+    swap_matrix_sha256: str | None
+    swap_fraction: np.ndarray
+    n_trials: int
+    n_sources: int
+    n_pre_bins: int
+    n_post_bins: int
+    chunk_size: int
+    quantile_method: str
+    active_count: int
+    active_fraction: float
+    entropy: float
+    below_one_percent_activation: bool
 
 
 def _ensure_binary_2d(x: np.ndarray) -> np.ndarray:
@@ -285,125 +334,534 @@ def binarise_signals(
     return signal_centre_norm > signal_thresh
 
 
+def _source_baseline_statistics(
+    signal: np.ndarray,
+    t_stim: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return pooled prestimulus mean and sample SD for every source."""
+    baseline = signal[:, :, :t_stim]
+    n_observations = int(baseline.shape[0] * baseline.shape[2])
+    if n_observations < 2:
+        raise ValueError(
+            "At least two prestimulus observations are required to estimate "
+            "source variability."
+        )
+
+    mean = baseline.mean(axis=(0, 2))
+    centred = baseline - mean[np.newaxis, :, np.newaxis]
+    sd = np.sqrt(
+        np.square(centred).sum(axis=(0, 2)) / float(n_observations - 1)
+    )
+    source_scale = np.max(np.abs(centred), axis=(0, 2))
+    tolerance = (
+        32.0
+        * np.finfo(float).eps
+        * np.maximum(source_scale, np.finfo(float).tiny)
+    )
+    invalid = (~np.isfinite(sd)) | (sd <= tolerance)
+    if np.any(invalid):
+        indices = np.flatnonzero(invalid)
+        preview = ", ".join(str(int(index)) for index in indices[:12])
+        suffix = "..." if indices.size > 12 else ""
+        raise ValueError(
+            "Prestimulus SD is zero or numerically unresolved for source "
+            f"indices [{preview}{suffix}]. Statistical normalization is "
+            "undefined; add stochastic baseline variability or remove the "
+            "invalid sources explicitly."
+        )
+    return mean, sd
+
+
+def _swap_matrix_sha256(swap_matrix: np.ndarray) -> str:
+    """Return a stable digest of a trial-swap schedule and its shape."""
+    swaps = np.asarray(swap_matrix, dtype=np.uint8, order="C")
+    digest = hashlib.sha256()
+    digest.update(np.asarray(swaps.shape, dtype="<i8").tobytes())
+    digest.update(swaps.tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _timewise_corrected_p_values(
+    observed: np.ndarray,
+    null_maxima: np.ndarray,
+) -> np.ndarray:
+    """Compute plus-one Monte Carlo P values corrected across sources."""
+    obs = np.asarray(observed, dtype=float)
+    maxima = np.asarray(null_maxima, dtype=float)
+    if obs.ndim != 2 or maxima.ndim != 2 or obs.shape[1] != maxima.shape[1]:
+        raise ValueError(
+            "Expected observed=(sources,time) and null_maxima=(surrogates,time)."
+        )
+    n_surrogates = int(maxima.shape[0])
+    corrected = np.empty(obs.shape, dtype=float)
+    for time_index in range(obs.shape[1]):
+        comparison_scale = max(
+            1.0,
+            float(np.max(np.abs(maxima[:, time_index]))),
+            float(np.max(np.abs(obs[:, time_index]))),
+        )
+        # Affine source transformations can introduce a few dozen ulps while
+        # baseline means are subtracted. Treat numerically identical
+        # permutation statistics as ties so their Monte Carlo ranks are stable.
+        tie_tolerance = 512.0 * np.finfo(float).eps * comparison_scale
+        exceedances = np.count_nonzero(
+            maxima[:, time_index, np.newaxis]
+            >= obs[np.newaxis, :, time_index] - tie_tolerance,
+            axis=0,
+        )
+        corrected[:, time_index] = (1.0 + exceedances) / float(
+            n_surrogates + 1
+        )
+    return corrected
+
+
+def _global_corrected_p_values(
+    observed: np.ndarray,
+    null_maxima: np.ndarray,
+) -> np.ndarray:
+    """Compute plus-one Monte Carlo P values against a global maximum null."""
+    obs = np.asarray(observed, dtype=float)
+    maxima = np.asarray(null_maxima, dtype=float).reshape(-1)
+    corrected = np.empty(obs.shape, dtype=float)
+    for time_index in range(obs.shape[1]):
+        comparison_scale = max(
+            1.0,
+            float(np.max(np.abs(maxima))),
+            float(np.max(np.abs(obs[:, time_index]))),
+        )
+        tie_tolerance = 512.0 * np.finfo(float).eps * comparison_scale
+        exceedances = np.count_nonzero(
+            maxima[:, np.newaxis]
+            >= obs[np.newaxis, :, time_index] - tie_tolerance,
+            axis=0,
+        )
+        corrected[:, time_index] = (1.0 + exceedances) / float(
+            maxima.size + 1
+        )
+    return corrected
+
+
 def binarise_signals_casali(
     signal_m: np.ndarray,
     t_stim: int,
     *,
-    n_bootstrap: int = 500,
+    n_bootstrap: int = 1000,
     alpha: float = 0.01,
     two_sided: bool = True,
     seed: int | None = 0,
+    significance_method: str = "pre_post_swap",
     single_trial: str = "raise",
-) -> np.ndarray:
-    """Binarize signals with the canonical Casali et al. (2013) procedure.
+    return_details: bool = False,
+    chunk_size: int = 64,
+    swap_matrix: np.ndarray | None = None,
+) -> np.ndarray | CasaliSignificanceResult:
+    """Estimate significant activity in one trial-averaged source response.
 
-    This is the method used to produce the empirical ``binJ`` matrices stored in
-    the tDCS/TMS-EEG dataset (``soglia = alpha = 0.01``). It differs from
-    :func:`binarise_signals` (the TVBSim/shuffle route) in five ways:
+    The production default implements the explicitly documented
+    Casali/Pantazis source-significance randomization:
 
-    1. **Baseline subtraction then per-source z-scoring** by each source's own
-       baseline SD (significance in units of baseline variability), not relative
-       change to the baseline mean.
-    2. **Bootstrap** trial resampling for the null, not a temporal shuffle.
-    3. **Two-sided** significance (``|response| > thresh``), not one-sided.
-    4. Operates on the **trial-averaged** response → a single ``binJ``.
-    5. Threshold = the ``(1 - alpha)`` percentile of the bootstrap **max
-       statistic** over sources × baseline-time (multiple-comparison control).
+    1. retain equal-duration prestimulus and poststimulus blocks;
+    2. independently decide, for every trial, whether those two complete
+       blocks are exchanged (one decision shared by all sources and times);
+    3. recompute the permuted prestimulus mean and SD;
+    4. average trials and normalize the response by its prestimulus standard
+       error;
+    5. at each response time, retain the largest absolute statistic over
+       sources; and
+    6. threshold with plus-one Monte Carlo P values at ``alpha``.
+
+    This controls the family-wise error rate over sources separately at each
+    response time (Pantazis permutation method 3).  It preserves spatial and
+    temporal covariance within a trial, unlike independently shuffling every
+    source trace.
+
+    ``"temporal_shuffle"`` and ``"trial_bootstrap"`` retain the previous
+    baseline-only nulls as explicit sensitivity analyses.  Neither should be
+    described as the canonical Casali/Pantazis pre/post permutation.
 
     Parameters
     ----------
     signal_m : np.ndarray
-        Real-valued signal, shape ``(n_trials, n_sources, n_bins)``. A 2D
-        ``(n_sources, n_bins)`` array is treated as a single trial, which is
-        rejected by default because the canonical bootstrap needs trials.
+        Real-valued data with shape ``(n_trials, n_sources, n_bins)``.
     t_stim : int
-        Stimulation onset in **bins**; baseline is ``:t_stim``.
-    n_bootstrap : int, default=500
-        Number of bootstrap resamples for the null distribution.
+        Stimulation onset in bins. For ``"pre_post_swap"``, the input must have
+        exactly ``2 * t_stim`` bins so the two exchanged blocks are equal.
+    n_bootstrap : int, default=1000
+        Historical API name for the number of Monte Carlo permutations.
     alpha : float, default=0.01
-        Significance level (Casali ``soglia``); threshold is the
-        ``100 * (1 - alpha)`` percentile of the bootstrap max statistic.
+        Family-wise significance level.
     two_sided : bool, default=True
-        If ``True`` threshold ``|response|`` (captures negative deflections).
+        Use absolute statistics when true.
     seed : int or None, default=0
-        Seed for the bootstrap RNG.
+        Seed for a dedicated PCG64 generator. The same seed and trial order
+        reproduce the same swap schedule.
+    significance_method : {"pre_post_swap", "temporal_shuffle",
+        "trial_bootstrap"}, default="pre_post_swap"
+        Null construction. The latter two choices are sensitivity analyses.
     single_trial : {"raise", "baseline_resample"}, default="raise"
-        Behavior when only one trial is supplied. ``"raise"`` refuses to
-        compute a trial-bootstrap threshold from a single averaged trace.
-        ``"baseline_resample"`` uses a non-canonical baseline time-resampling
-        surrogate and should be used only as an explicit sensitivity analysis.
+        A single trial is rejected by default. The explicit fallback uses the
+        legacy baseline-resampling sensitivity analysis.
+    return_details : bool, default=False
+        Return :class:`CasaliSignificanceResult` instead of only ``binary``.
+    chunk_size : int, default=64
+        Number of pre/post swap schedules evaluated together.
+    swap_matrix : np.ndarray, optional
+        Prescribed Boolean matrix with shape ``(n_permutations, n_trials)``.
+        This is primarily intended for exact reference tests and audited
+        reruns. When provided, its row count supersedes ``n_bootstrap``.
 
     Returns
     -------
-    np.ndarray
-        ``uint8`` matrix of shape ``(n_sources, n_bins)`` — the trial-averaged
-        significant-source matrix (note: **not** per-trial, unlike
-        :func:`binarise_signals`).
+    np.ndarray or CasaliSignificanceResult
+        A single ``uint8`` source-by-time matrix. For the canonical method,
+        prestimulus entries are zero and only poststimulus entries contain
+        inferential decisions.
+
+    Notes
+    -----
+    This is exact to the explicit source-level randomization described by
+    Pantazis et al. and adopted by Casali et al. (2010). The historic 2013 PCI
+    supplementary MATLAB implementation is not publicly inspectable here, so
+    byte-for-byte equivalence to that software is not asserted.
     """
     s = np.asarray(signal_m, dtype=float)
     if s.ndim == 2:
         s = s[np.newaxis, :, :]
     if s.ndim != 3:
         raise ValueError(
-            f"Expected (n_trials, n_sources, n_bins) or (n_sources, n_bins), got {s.shape}."
+            "Expected (n_trials, n_sources, n_bins) or "
+            f"(n_sources, n_bins), got {s.shape}."
         )
-    n_trials, _, n_bins = s.shape
-    if not (1 <= t_stim < n_bins):
-        raise ValueError(f"t_stim must be in [1, n_bins-1]. Got {t_stim}, n_bins={n_bins}.")
-    if n_bootstrap < 1:
-        raise ValueError("n_bootstrap must be >= 1.")
-    if not (0.0 < float(alpha) < 1.0):
-        raise ValueError("alpha must be between 0 and 1.")
+    if not np.all(np.isfinite(s)):
+        raise ValueError("signal_m contains NaN or infinite values.")
 
-    single_trial_key = str(single_trial).lower()
+    n_trials, n_sources, n_bins = (int(value) for value in s.shape)
+    if n_sources < 1:
+        raise ValueError("signal_m must contain at least one source.")
+    if not (1 <= int(t_stim) < n_bins):
+        raise ValueError(
+            f"t_stim must be in [1, n_bins-1]. Got {t_stim}, n_bins={n_bins}."
+        )
+    t_stim = int(t_stim)
+    n_surrogates_requested = int(n_bootstrap)
+    if n_surrogates_requested < 1 or n_surrogates_requested != n_bootstrap:
+        raise ValueError("n_bootstrap must be an integer >= 1.")
+    if not np.isfinite(alpha) or not (0.0 < float(alpha) < 1.0):
+        raise ValueError("alpha must be finite and between 0 and 1.")
+    if int(chunk_size) < 1 or int(chunk_size) != chunk_size:
+        raise ValueError("chunk_size must be an integer >= 1.")
+    chunk_size = int(chunk_size)
+
+    aliases = {
+        "pre_post_swap": "pre_post_swap",
+        "pre_post_permutation": "pre_post_swap",
+        "within_trial_pre_post": "pre_post_swap",
+        "casali": "pre_post_swap",
+        "canonical": "pre_post_swap",
+        "temporal_shuffle": "temporal_shuffle",
+        "prestimulus_shuffle": "temporal_shuffle",
+        "time_shuffle": "temporal_shuffle",
+        "trial_bootstrap": "trial_bootstrap",
+        "bootstrap_trials": "trial_bootstrap",
+    }
+    requested_method = (
+        str(significance_method).strip().lower().replace("-", "_")
+    )
+    if requested_method not in aliases:
+        raise ValueError(
+            "significance_method must be 'pre_post_swap', "
+            "'temporal_shuffle', or 'trial_bootstrap'. "
+            f"Got {significance_method!r}."
+        )
+    method_key = aliases[requested_method]
+
+    single_trial_key = str(single_trial).strip().lower()
     if n_trials == 1 and single_trial_key in ("raise", "error", "strict"):
         raise ValueError(
-            "Casali bootstrap binarisation requires more than one trial. "
-            "Pass trial-level data with shape (n_trials, n_sources, n_bins), "
-            "or set single_trial='baseline_resample' for a non-canonical "
-            "single-trace sensitivity analysis."
+            "Casali/Pantazis significance estimation requires more than one "
+            "trial. Pass trial-level data, or set "
+            "single_trial='baseline_resample' for a non-canonical sensitivity "
+            "analysis."
         )
-    if n_trials == 1 and single_trial_key not in ("baseline_resample",):
+    if n_trials == 1 and single_trial_key != "baseline_resample":
         raise ValueError(
             "single_trial must be 'raise' or 'baseline_resample'. "
             f"Got {single_trial!r}."
         )
+    if n_trials == 1:
+        method_key = "single_trial_baseline_resample"
 
-    rng = np.random.default_rng(seed)
+    if swap_matrix is not None and method_key != "pre_post_swap":
+        raise ValueError(
+            "swap_matrix is only valid with significance_method='pre_post_swap'."
+        )
+    if method_key == "pre_post_swap" and n_bins != 2 * t_stim:
+        raise ValueError(
+            "pre_post_swap requires equal prestimulus and poststimulus "
+            f"durations: expected n_bins={2 * t_stim}, got {n_bins}."
+        )
 
-    # 1. Baseline subtraction per trial & source, then per-source normalization
-    #    by baseline SD. Casali significance is expressed in units of each
-    #    source's own baseline variability; without this a single global
-    #    threshold is dominated by the loudest sources (source-current baseline
-    #    SD spans 1-2 orders of magnitude across vertices), leaving quiet
-    #    sources permanently sub-threshold and PCI strongly under-estimated.
-    base_mean = s[:, :, :t_stim].mean(axis=2, keepdims=True)
-    bc = s - base_mean
-    base_sd = bc[:, :, :t_stim].std(axis=(0, 2))  # (n_sources,) pooled SD
-    base_sd = np.where(base_sd < _EPS, 1.0, base_sd)
-    bc = bc / base_sd[np.newaxis, :, np.newaxis]
-    avg = bc.mean(axis=0)  # (n_sources, n_bins) z-scored trial-averaged response
-    base_bc = bc[:, :, :t_stim]  # (n_trials, n_sources, t_stim)
+    baseline_mean, baseline_sd = _source_baseline_statistics(s, t_stim)
+    centred = s - baseline_mean[np.newaxis, :, np.newaxis]
+    averaged_response = centred.mean(axis=0) / baseline_sd[:, np.newaxis]
+    rng = np.random.Generator(np.random.PCG64(seed))
+    rng_name = type(rng.bit_generator).__name__
 
-    # 2/5. Bootstrap null of the max statistic over baseline.
-    maxstat = np.empty(int(n_bootstrap), dtype=float)
-    for b in range(int(n_bootstrap)):
-        if n_trials > 1:
-            idx = rng.integers(0, n_trials, n_trials)
-            boot = base_bc[idx].mean(axis=0)  # (n_sources, t_stim)
+    if method_key == "pre_post_swap":
+        if swap_matrix is None:
+            swaps = rng.integers(
+                0,
+                2,
+                size=(n_surrogates_requested, n_trials),
+                dtype=np.uint8,
+            ).astype(bool)
         else:
-            # Non-canonical fallback: resample baseline time points with
-            # replacement while preserving the spatial pattern in each column.
-            idx = rng.integers(0, t_stim, t_stim)
-            boot = base_bc[0, :, idx]
-        vals = np.abs(boot) if two_sided else boot
-        maxstat[b] = float(vals.max())
+            raw_swaps = np.asarray(swap_matrix)
+            if raw_swaps.ndim != 2 or raw_swaps.shape[1] != n_trials:
+                raise ValueError(
+                    "swap_matrix must have shape "
+                    f"(n_permutations, {n_trials}), got {raw_swaps.shape}."
+                )
+            if raw_swaps.shape[0] < 1 or not np.all(
+                (raw_swaps == 0) | (raw_swaps == 1)
+            ):
+                raise ValueError(
+                    "swap_matrix must contain at least one row and only 0/1 "
+                    "or Boolean values."
+                )
+            swaps = raw_swaps.astype(bool, copy=True)
 
-    thresh = float(np.quantile(maxstat, 1.0 - alpha))
+        n_surrogates = int(swaps.shape[0])
+        n_post_bins = int(n_bins - t_stim)
+        n_baseline_observations = int(n_trials * t_stim)
+        sqrt_trials = float(np.sqrt(n_trials))
+        pre = centred[:, :, :t_stim]
+        post = centred[:, :, t_stim:]
 
-    # 3. Two-sided thresholding of the averaged response.
-    resp = np.abs(avg) if two_sided else avg
-    return (resp > thresh).astype(np.uint8)
+        observed_statistic = (
+            averaged_response * sqrt_trials
+        )
+        observed_post = observed_statistic[:, t_stim:]
+        observed_for_test = (
+            np.abs(observed_post) if two_sided else observed_post
+        )
+
+        pre_sum_by_trial = pre.sum(axis=2)
+        post_sum_by_trial = post.sum(axis=2)
+        pre_square_sum_by_trial = np.square(pre).sum(axis=2)
+        post_square_sum_by_trial = np.square(post).sum(axis=2)
+        pre_sum = pre_sum_by_trial.sum(axis=0)
+        pre_square_sum = pre_square_sum_by_trial.sum(axis=0)
+        pre_sum_delta = post_sum_by_trial - pre_sum_by_trial
+        pre_square_sum_delta = (
+            post_square_sum_by_trial - pre_square_sum_by_trial
+        )
+        post_mean = post.mean(axis=0)
+        swapped_post_delta = np.ascontiguousarray(
+            (pre - post).reshape(n_trials, n_sources * n_post_bins)
+        )
+
+        null_maxima = np.empty(
+            (n_surrogates, n_post_bins),
+            dtype=float,
+        )
+        for start in range(0, n_surrogates, chunk_size):
+            stop = min(start + chunk_size, n_surrogates)
+            weights = swaps[start:stop].astype(float, copy=False)
+
+            permuted_pre_sum = (
+                pre_sum[np.newaxis, :] + weights @ pre_sum_delta
+            )
+            permuted_pre_square_sum = (
+                pre_square_sum[np.newaxis, :]
+                + weights @ pre_square_sum_delta
+            )
+            permuted_pre_mean = (
+                permuted_pre_sum / float(n_baseline_observations)
+            )
+            variance_numerator = (
+                permuted_pre_square_sum
+                - float(n_baseline_observations)
+                * np.square(permuted_pre_mean)
+            )
+            variance_tolerance = (
+                64.0
+                * np.finfo(float).eps
+                * np.maximum(
+                    np.abs(permuted_pre_square_sum),
+                    np.finfo(float).tiny,
+                )
+            )
+            invalid_variance = (
+                (~np.isfinite(variance_numerator))
+                | (variance_numerator <= variance_tolerance)
+            )
+            if np.any(invalid_variance):
+                local_permutation, source_index = np.argwhere(
+                    invalid_variance
+                )[0]
+                raise ValueError(
+                    "A pre/post permutation produced zero or numerically "
+                    "unresolved prestimulus SD at permutation "
+                    f"{start + int(local_permutation)}, source "
+                    f"{int(source_index)}."
+                )
+            permuted_pre_sd = np.sqrt(
+                variance_numerator
+                / float(n_baseline_observations - 1)
+            )
+
+            permuted_post_mean = (
+                post_mean[np.newaxis, :, :]
+                + (
+                    weights @ swapped_post_delta
+                ).reshape(stop - start, n_sources, n_post_bins)
+                / float(n_trials)
+            )
+            permuted_statistic = (
+                permuted_post_mean
+                - permuted_pre_mean[:, :, np.newaxis]
+            ) / (
+                permuted_pre_sd[:, :, np.newaxis] / sqrt_trials
+            )
+            values = (
+                np.abs(permuted_statistic)
+                if two_sided
+                else permuted_statistic
+            )
+            null_maxima[start:stop] = values.max(axis=1)
+
+        threshold_by_time = np.quantile(
+            null_maxima,
+            1.0 - float(alpha),
+            axis=0,
+            method="higher",
+        )
+        corrected_post = _timewise_corrected_p_values(
+            observed_for_test,
+            null_maxima,
+        )
+        binary = np.zeros((n_sources, n_bins), dtype=np.uint8)
+        binary[:, t_stim:] = (corrected_post <= float(alpha)).astype(
+            np.uint8
+        )
+        corrected_p_values = np.ones((n_sources, n_bins), dtype=float)
+        corrected_p_values[:, t_stim:] = corrected_post
+        threshold = float(np.max(threshold_by_time))
+        fwer_scope = "sources_per_response_time"
+        swap_digest = _swap_matrix_sha256(swaps)
+        swap_fraction = swaps.mean(axis=1, dtype=float)
+    else:
+        # Explicit sensitivity analyses retained for backwards comparison.
+        trial_base_mean = s[:, :, :t_stim].mean(axis=2, keepdims=True)
+        trial_centred = s - trial_base_mean
+        sensitivity_sd = np.sqrt(
+            np.square(trial_centred[:, :, :t_stim]).mean(axis=(0, 2))
+        )
+        sensitivity_scale = np.max(
+            np.abs(trial_centred[:, :, :t_stim]),
+            axis=(0, 2),
+        )
+        sensitivity_tolerance = (
+            32.0
+            * np.finfo(float).eps
+            * np.maximum(sensitivity_scale, np.finfo(float).tiny)
+        )
+        invalid = sensitivity_sd <= sensitivity_tolerance
+        if np.any(invalid):
+            indices = ", ".join(
+                str(int(index)) for index in np.flatnonzero(invalid)[:12]
+            )
+            raise ValueError(
+                "Prestimulus SD is zero or numerically unresolved for "
+                f"sensitivity-analysis source indices [{indices}]."
+            )
+        normalized = (
+            trial_centred
+            / sensitivity_sd[np.newaxis, :, np.newaxis]
+        )
+        averaged_response = normalized.mean(axis=0)
+        observed_statistic = averaged_response.copy()
+        baseline_only = normalized[:, :, :t_stim]
+        null_maxima = np.empty(n_surrogates_requested, dtype=float)
+        for surrogate_index in range(n_surrogates_requested):
+            if method_key == "single_trial_baseline_resample":
+                indices = rng.integers(0, t_stim, t_stim)
+                surrogate = baseline_only[0, :, indices]
+            elif method_key == "temporal_shuffle":
+                surrogate = rng.permuted(
+                    baseline_only,
+                    axis=2,
+                ).mean(axis=0)
+            else:
+                indices = rng.integers(0, n_trials, n_trials)
+                surrogate = baseline_only[indices].mean(axis=0)
+            values = np.abs(surrogate) if two_sided else surrogate
+            null_maxima[surrogate_index] = float(values.max())
+
+        threshold = float(
+            np.quantile(
+                null_maxima,
+                1.0 - float(alpha),
+                method="higher",
+            )
+        )
+        observed_for_test = (
+            np.abs(observed_statistic)
+            if two_sided
+            else observed_statistic
+        )
+        corrected_p_values = _global_corrected_p_values(
+            observed_for_test,
+            null_maxima,
+        )
+        binary = (corrected_p_values <= float(alpha)).astype(np.uint8)
+        threshold_by_time = np.full(n_bins, threshold, dtype=float)
+        n_surrogates = n_surrogates_requested
+        n_post_bins = int(n_bins - t_stim)
+        fwer_scope = "sources_and_prestimulus_time_global"
+        swap_digest = None
+        swap_fraction = np.empty(0, dtype=float)
+
+    binary_post = binary[:, t_stim:]
+    active_count = int(binary_post.sum())
+    active_fraction = (
+        float(binary_post.mean()) if binary_post.size else 0.0
+    )
+    entropy = float(source_entropy(binary_post))
+    result = CasaliSignificanceResult(
+        binary=binary,
+        averaged_response=averaged_response,
+        threshold=threshold,
+        null_maxima=null_maxima,
+        significance_method=method_key,
+        n_surrogates=int(n_surrogates),
+        alpha=float(alpha),
+        two_sided=bool(two_sided),
+        threshold_by_time=np.asarray(threshold_by_time, dtype=float),
+        corrected_p_values=corrected_p_values,
+        observed_statistic=observed_statistic,
+        baseline_mean=baseline_mean,
+        baseline_sd=baseline_sd,
+        fwer_scope=fwer_scope,
+        seed=None if seed is None else int(seed),
+        rng_bit_generator=rng_name,
+        swap_matrix_sha256=swap_digest,
+        swap_fraction=np.asarray(swap_fraction, dtype=float),
+        n_trials=n_trials,
+        n_sources=n_sources,
+        n_pre_bins=t_stim,
+        n_post_bins=n_post_bins,
+        chunk_size=chunk_size,
+        quantile_method="higher",
+        active_count=active_count,
+        active_fraction=active_fraction,
+        entropy=entropy,
+        below_one_percent_activation=bool(active_fraction < 0.01),
+    )
+    if return_details:
+        return result
+    return result.binary
 
 
 def binarise(
@@ -424,9 +882,10 @@ def binarise(
     method : {"tvbsim", "casali"}, default="tvbsim"
         - ``"tvbsim"`` : :func:`binarise_signals` — the existing shuffle-based
           route (per-trial output). Accepts ``nshuffles``, ``percentile``.
-        - ``"casali"`` : :func:`binarise_signals_casali` — the paper-faithful
-          bootstrap route (single trial-averaged output). Accepts
-          ``n_bootstrap``, ``alpha``, ``two_sided``, ``seed``.
+        - ``"casali"`` : :func:`binarise_signals_casali` — a single
+          trial-averaged output using the within-trial pre/post permutation by
+          default. Accepts ``n_bootstrap``, ``alpha``, ``two_sided``, ``seed``,
+          ``significance_method``, ``chunk_size`` and ``swap_matrix``.
     **kwargs
         Forwarded to the selected route.
 
@@ -446,6 +905,7 @@ def binarise(
 
 
 __all__ = [
+    "CasaliSignificanceResult",
     "binarise_signals",
     "binarise_signals_casali",
     "binarise",

@@ -16,6 +16,7 @@ import numpy as np
 from scipy.signal import detrend, hilbert
 
 from tvbtoolkit.complexity.pci_casali import (
+    CasaliSignificanceResult,
     binarise_signals,
     binarise_signals_casali,
     lz_complexity_2d,
@@ -332,11 +333,11 @@ def pci_casali_like(
     The binarization step is selectable via ``binarise_method``:
 
     - ``"tvbsim"`` (default): the original shuffle-based route, unchanged.
-    - ``"casali"`` : the paper-faithful bootstrap route
+    - ``"casali"`` : the trial-averaged statistical-significance route
       (:func:`~tvbtoolkit.complexity.pci_casali.binarise_signals_casali`),
-      matching how the empirical dataset's ``binJ`` was produced. Pass route
-      parameters (``n_bootstrap``, ``alpha``, ``two_sided``, ``seed``) via
-      ``binarise_kwargs``.
+      whose default is the explicit within-trial pre/post-block permutation.
+      Pass route parameters (``n_bootstrap``, ``alpha``, ``two_sided``,
+      ``seed``, ``significance_method``) via ``binarise_kwargs``.
 
     Parameters
     ----------
@@ -468,24 +469,32 @@ def pci_casali_like_multi_trial(
     percentile: float = 100.0,
     binarise_method: str = "tvbsim",
     binarise_kwargs: dict[str, Any] | None = None,
-) -> "tuple[float, np.ndarray]":
+    response_start_ms: float = 0.0,
+    min_source_entropy: float | None = 0.08,
+    return_debug: bool = False,
+) -> "tuple[float, np.ndarray] | dict[str, Any]":
     """Compute Casali-style PCI from multiple stimulation trials.
 
     ``binarise_method`` selects the binarization route ("tvbsim" default, or
-    "casali" for the paper-faithful bootstrap route). Under ``"casali"`` the
-    aligned trials are retained for bootstrap threshold estimation, jointly
-    reduced to one trial-averaged ``binJ``, and one PCI value is returned.
+    "casali" for statistical thresholding of one trial-averaged response).
+    The canonical ``"casali"`` default inside
+    :func:`binarise_signals_casali` exchanges complete, equal-duration pre- and
+    post-stimulation blocks within trials and applies a time-specific
+    maximum-over-sources family-wise correction.  The former temporal-shuffle
+    and whole-trial-bootstrap nulls remain available only as explicitly named
+    sensitivity analyses.
 
-    This is the exact multi-trial parity implementation matching TVBSim's
-    ``_calculate_PCI_seed_subset`` and ``parallelized_PCI`` workflow.
+    The ``"tvbsim"`` branch preserves parity with TVBSim's
+    ``_calculate_PCI_seed_subset`` and ``parallelized_PCI`` workflow.  The
+    ``"casali"`` branch instead computes the single statistically thresholded
+    PCI of the aligned trial average, which is the production route.
 
-    TVBSim uses ``n_trials=5`` (the ``n_trials`` argument, default 5) for each
-    PCI estimate.  Each trial is a separate simulation run that shares the same
-    stimulus time.  The trials are stacked into a 3D array of shape
-    ``(n_trials, n_sources, 2*nbins_analysis)`` and jointly binarized using
-    pre-stimulus baseline statistics pooled across all trials (matching
-    ``binarise_signals``).  PCI is then computed for each trial individually on
-    the post-stimulus window and the mean is returned.
+    In both branches, each trial is a separate simulation run.  Trials are cut
+    relative to their own stimulation onset, aligned to a common midpoint, and
+    stacked as ``(n_trials, n_sources, 2*nbins_analysis)``.  The production
+    Casali branch makes one inferential decision and calculates one PCI on the
+    resulting trial-averaged response; it never averages independently
+    calculated single-trial PCI values.
 
     Key TVBSim parameter defaults replicated here:
     - ``t_analysis = 300`` ms  (half-window for pre/post)
@@ -516,6 +525,21 @@ def pci_casali_like_multi_trial(
         Number of pre-stimulus surrogate shuffles (TVBSim default: ``10``).
     percentile : float, default=100.0
         TVBSim-style threshold percentile for surrogate maxima indexing.
+    response_start_ms : float, default=0.0
+        Delay after stimulation onset at which the response matrix begins.
+        This is useful for excluding the stimulation pulse or a TMS artifact.
+        The value is rounded upward to the next complete sample.
+    min_source_entropy : float or None, default=0.08
+        For the Casali route, return PCI=0 when the Bernoulli entropy
+        of the significant source-time matrix is at or below this value.
+        The empirical PCI protocol uses 0.08 to prevent unstable Lempel-Ziv
+        normalization when significant activity is absent or below roughly
+        one percent. Pass ``None`` only for a documented sensitivity analysis.
+    return_debug : bool, default=False
+        Return the PCI value together with the binary response, threshold and
+        null-distribution diagnostics. This is intended for auditable
+        post-hoc analyses; the default two-value return remains backward
+        compatible.
 
     Returns
     -------
@@ -544,6 +568,14 @@ def pci_casali_like_multi_trial(
     """
     if dt_ms <= 0:
         raise ValueError("dt_ms must be > 0.")
+    if response_start_ms < 0.0 or response_start_ms >= t_analysis_ms:
+        raise ValueError(
+            "response_start_ms must be >= 0 and smaller than t_analysis_ms."
+        )
+    if min_source_entropy is not None and not (
+        0.0 <= float(min_source_entropy) <= 1.0
+    ):
+        raise ValueError("min_source_entropy must lie within [0, 1] or be None.")
 
     nbins_analysis = int(round(float(t_analysis_ms) / float(dt_ms)))
     if nbins_analysis < 1:
@@ -606,17 +638,68 @@ def pci_casali_like_multi_trial(
     bin_kw = dict(binarise_kwargs or {})
     method_key = _normalise_binarise_method(binarise_method)
 
+    response_offset_bins = int(np.ceil(float(response_start_ms) / float(dt_ms)))
+    response_start_bin = nbins_analysis + response_offset_bins
+
     if method_key == "casali":
-        # Paper-faithful route: trials reduce to one trial-averaged binJ.
-        binJ = binarise_signals_casali(
-            stacked, t_stim=nbins_analysis, **bin_kw
-        ).astype(np.uint8)[:, nbins_analysis:]
+        # One inferential decision is made on the aligned, trial-averaged
+        # response. Keep the threshold/null maxima so the result can be
+        # independently audited.
+        bin_kw.pop("return_details", None)
+        significance = binarise_signals_casali(
+            stacked,
+            t_stim=nbins_analysis,
+            return_details=True,
+            **bin_kw,
+        )
+        if not isinstance(significance, CasaliSignificanceResult):
+            raise AssertionError("Expected CasaliSignificanceResult diagnostics.")
+        binJ = significance.binary.astype(np.uint8)[:, response_start_bin:]
         binJs = sort_binJ(binJ)
+        entropy_val = float(source_entropy(binJs))
         if np.any(binJs):
-            pci = float(lz_complexity_2d(binJs) / max(pci_norm_factor(binJs), np.finfo(float).eps))
+            lz_val = float(lz_complexity_2d(binJs))
+            norm_val = float(pci_norm_factor(binJs))
+            pci_unthresholded = float(
+                lz_val / max(norm_val, np.finfo(float).eps)
+            )
         else:
-            pci = 0.0
-        return pci, np.asarray([pci], dtype=float)
+            lz_val = 0.0
+            norm_val = 0.0
+            pci_unthresholded = 0.0
+        low_activation = bool(
+            min_source_entropy is not None
+            and entropy_val <= float(min_source_entropy)
+        )
+        pci = 0.0 if low_activation else pci_unthresholded
+        pci_values = np.asarray([pci], dtype=float)
+        if not return_debug:
+            return pci, pci_values
+        return {
+            "pci": pci,
+            "pci_before_entropy_floor": pci_unthresholded,
+            "pci_values": pci_values,
+            "lz": lz_val,
+            "norm": norm_val,
+            "entropy": entropy_val,
+            "min_source_entropy": min_source_entropy,
+            "low_activation_forced_zero": low_activation,
+            "active_fraction": float(np.mean(binJs)),
+            "binary_response": binJs,
+            "averaged_response": significance.averaged_response,
+            "threshold": float(significance.threshold),
+            "null_maxima": significance.null_maxima,
+            "significance_method": significance.significance_method,
+            "n_surrogates": significance.n_surrogates,
+            "alpha": significance.alpha,
+            "two_sided": significance.two_sided,
+            "n_trials": n_trials,
+            "response_start_ms_requested": float(response_start_ms),
+            "response_start_ms_effective": float(response_offset_bins * dt_ms),
+            "response_start_bin": int(response_start_bin),
+            "response_n_bins": int(binJs.shape[1]),
+            "dt_ms": float(dt_ms),
+        }
 
     # ---- Joint binarization (pre-stimulus baseline pooled across trials) ----
     # t_stim = nbins_analysis  →  pre-stimulus is [:, :, :nbins_analysis]
@@ -631,7 +714,7 @@ def pci_casali_like_multi_trial(
     pci_per_trial = np.empty(n_trials, dtype=float)
     for k in range(n_trials):
         # Exact TVBSim slice: binJ = sig_all_binary[k, :, nbins_analysis:]
-        binJ = sig_all_binary.astype(np.uint8)[k, :, nbins_analysis:]
+        binJ = sig_all_binary.astype(np.uint8)[k, :, response_start_bin:]
 
         binJs = sort_binJ(binJ)
         if not np.any(binJs):
@@ -642,7 +725,19 @@ def pci_casali_like_multi_trial(
         norm_val = float(pci_norm_factor(binJs))
         pci_per_trial[k] = float(lz_val / max(norm_val, np.finfo(float).eps))
 
-    return float(np.mean(pci_per_trial)), pci_per_trial
+    pci_mean = float(np.mean(pci_per_trial))
+    if not return_debug:
+        return pci_mean, pci_per_trial
+    return {
+        "pci": pci_mean,
+        "pci_values": pci_per_trial,
+        "n_trials": n_trials,
+        "significance_method": "tvbsim_legacy",
+        "response_start_ms_requested": float(response_start_ms),
+        "response_start_ms_effective": float(response_offset_bins * dt_ms),
+        "response_start_bin": int(response_start_bin),
+        "dt_ms": float(dt_ms),
+    }
 
 
 def pci_ratio_proxy(

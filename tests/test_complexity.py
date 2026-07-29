@@ -130,3 +130,41 @@ def test_multi_trial_casali_uses_the_evoked_trial_average():
 
     assert pci == 0.0
     np.testing.assert_array_equal(values, np.asarray([0.0]))
+
+
+def test_multi_trial_casali_applies_empirical_entropy_floor():
+    rng = np.random.default_rng(7)
+    trials = rng.normal(size=(30, 20, 100))
+    # A very sparse, phase-locked response can produce a numerically unstable
+    # normalized LZ value even though less than 1% of source-time cells are
+    # active. The empirical H<=0.08 safeguard must force this case to zero.
+    trials[:, 0, 70] += 8.0
+    common = {
+        "stimulation_index": 50,
+        "t_analysis_ms": 50.0,
+        "dt_ms": 1.0,
+        "binarise_method": "casali",
+        "binarise_kwargs": {
+            "n_bootstrap": 199,
+            "alpha": 0.05,
+            "seed": 1,
+        },
+        "return_debug": True,
+    }
+
+    without_floor = pci_casali_like_multi_trial(
+        trials,
+        min_source_entropy=None,
+        **common,
+    )
+    with_floor = pci_casali_like_multi_trial(
+        trials,
+        min_source_entropy=0.08,
+        **common,
+    )
+
+    assert without_floor["pci"] > 0.0
+    assert without_floor["entropy"] <= 0.08
+    assert with_floor["pci"] == 0.0
+    assert with_floor["pci_before_entropy_floor"] > 0.0
+    assert with_floor["low_activation_forced_zero"] is True

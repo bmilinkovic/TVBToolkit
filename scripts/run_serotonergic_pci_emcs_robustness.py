@@ -125,6 +125,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=_REPO_ROOT / "results" / "serotonergic_pci_emcs_robustness_100trials",
     )
+    parser.add_argument(
+        "--analysis-output-root",
+        type=Path,
+        default=None,
+        help=(
+            "Optional directory for versioned PCI tables, figures, and "
+            "analysis provenance. Simulation NPZs remain under --output-root."
+        ),
+    )
     parser.add_argument("--subject-id", default="e0001")
     parser.add_argument("--scenario", default="private_alpha0")
     parser.add_argument("--trial-seeds", type=int, nargs="+", default=list(range(100)))
@@ -165,9 +174,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "available only for legacy comparison."
         ),
     )
-    parser.add_argument("--pci-bootstrap-replicates", type=int, default=500)
-    parser.add_argument("--pci-alpha", type=float, default=0.01)
-    parser.add_argument("--pci-bootstrap-seed", type=int, default=0)
+    parser.add_argument(
+        "--pci-significance-method",
+        choices=["pre_post_swap", "temporal_shuffle", "trial_bootstrap"],
+        default="pre_post_swap",
+    )
+    parser.add_argument(
+        "--pci-permutation-replicates",
+        "--pci-bootstrap-replicates",
+        dest="pci_bootstrap_replicates",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "--pci-alpha",
+        type=float,
+        default=pilot.DEFAULT_PCI_ALPHA,
+    )
+    parser.add_argument(
+        "--pci-permutation-seed",
+        "--pci-bootstrap-seed",
+        dest="pci_bootstrap_seed",
+        type=int,
+        default=0,
+    )
+    parser.add_argument("--pci-response-start-ms", type=float, default=8.0)
+    parser.add_argument("--pci-min-source-entropy", type=float, default=0.08)
     parser.add_argument("--e-l-e-drug", type=float, default=-61.2)
     parser.add_argument("--e-l-i-drug", type=float, default=-64.4)
     parser.add_argument(
@@ -275,6 +307,10 @@ def _npz_scalar(data: Any, key: str) -> Any:
 def _validate_inputs(args: argparse.Namespace) -> None:
     args.dataset_root = args.dataset_root.expanduser().resolve()
     args.output_root = args.output_root.expanduser().resolve()
+    if args.analysis_output_root is not None:
+        args.analysis_output_root = (
+            args.analysis_output_root.expanduser().resolve()
+        )
     args.receptor_csv = args.receptor_csv.expanduser().resolve()
     args.trial_seeds = [int(seed) for seed in args.trial_seeds]
     args.occupancies = [float(occupancy) for occupancy in args.occupancies]
@@ -361,6 +397,41 @@ def _validate_inputs(args: argparse.Namespace) -> None:
         if str(args.pci_binarise_method) != "casali":
             raise ValueError(
                 "The production robustness analysis requires Casali PCI."
+            )
+        if str(args.pci_significance_method) != "pre_post_swap":
+            raise ValueError(
+                "The production robustness analysis requires the canonical "
+                "within-trial pre/post-block permutation."
+            )
+        if int(args.pci_bootstrap_replicates) != 1000:
+            raise ValueError(
+                "The production robustness analysis requires 1000 permutations."
+            )
+        if not np.isclose(
+            float(args.pci_alpha),
+            pilot.DEFAULT_PCI_ALPHA,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                "The production robustness PCI significance level is "
+                f"alpha={pilot.DEFAULT_PCI_ALPHA:g}."
+            )
+        if int(args.pci_bootstrap_seed) != 0:
+            raise ValueError(
+                "The production robustness PCI permutation seed is 0."
+            )
+        if not np.isclose(
+            float(args.pci_response_start_ms), 8.0, rtol=0.0, atol=1e-12
+        ):
+            raise ValueError(
+                "The production robustness PCI response window begins at 8 ms."
+            )
+        if not np.isclose(
+            float(args.pci_min_source_entropy), 0.08, rtol=0.0, atol=1e-12
+        ):
+            raise ValueError(
+                "The production low-activation source-entropy floor is 0.08."
             )
         if not np.isclose(
             float(args.e_l_e_drug),
@@ -585,14 +656,25 @@ def _build_protocol_manifest(
             np.asarray(receptor_map, dtype=np.float64)
         ),
         "pci_binarise_method": str(args.pci_binarise_method),
+        "pci_significance_method": str(args.pci_significance_method),
+        "pci_familywise_error_scope": (
+            "maximum_across_sources_separately_at_each_response_latency"
+        ),
         "pci_estimator": (
             "single canonical PCI from the time-locked trial-averaged response"
             if str(args.pci_binarise_method) == "casali"
             else "legacy mean of per-trial TVBSim PCI values"
         ),
+        "pci_permutation_replicates": int(args.pci_bootstrap_replicates),
         "pci_bootstrap_replicates": int(args.pci_bootstrap_replicates),
         "pci_alpha": float(args.pci_alpha),
+        "pci_permutation_seed": int(args.pci_bootstrap_seed),
         "pci_bootstrap_seed": int(args.pci_bootstrap_seed),
+        "pci_response_window_ms": [
+            float(args.pci_response_start_ms),
+            float(args.t_analysis_ms),
+        ],
+        "pci_min_source_entropy": float(args.pci_min_source_entropy),
         "model_family": "adex_zerlaut",
         "model_form": "split_gK_gNa_all_occupancies",
         "split_gK_gNa_at_occupancy_zero": True,
@@ -615,10 +697,13 @@ def _build_protocol_manifest(
             len(configs) * len(args.occupancies) * len(args.trial_seeds)
         ),
     }
-    protocol_fingerprint = _fingerprint(protocol)
+    protocol["analysis_protocol_version"] = pilot.ANALYSIS_PROTOCOL_VERSION
+    simulation_fingerprint = pilot._simulation_fingerprint(protocol)
+    protocol["simulation_fingerprint"] = simulation_fingerprint
+    protocol["protocol_fingerprint"] = simulation_fingerprint
+    protocol["analysis_fingerprint"] = pilot._analysis_fingerprint(protocol)
     return {
         **protocol,
-        "protocol_fingerprint": protocol_fingerprint,
         "output_root": str(args.output_root),
     }
 
@@ -628,22 +713,35 @@ def _write_or_validate_manifest(
     manifest: dict[str, Any],
     *,
     overwrite: bool,
-) -> None:
+) -> dict[str, Any]:
+    requested_simulation_fingerprint = (
+        pilot._manifest_simulation_fingerprint(manifest)
+    )
     if path.exists() and not overwrite:
         previous = json.loads(path.read_text(encoding="utf-8"))
-        if previous.get("protocol_fingerprint") != manifest["protocol_fingerprint"]:
+        previous_simulation_fingerprint = (
+            pilot._manifest_simulation_fingerprint(previous)
+        )
+        if (
+            previous_simulation_fingerprint
+            != requested_simulation_fingerprint
+        ):
             raise RuntimeError(
-                "Existing output has a different protocol fingerprint. "
+                "Existing output has a different immutable simulation "
+                "fingerprint. PCI analysis changes do not invalidate a "
+                "compatible trial cache. "
                 f"Choose another --output-root or pass --overwrite: {path}"
             )
-        return
+        return previous
     _atomic_write_json(path, manifest)
+    return manifest
 
 
 def _validate_existing_trial(
     path: Path,
     *,
     protocol_fingerprint: str,
+    simulation_fingerprint: str | None = None,
     config: dict[str, Any],
     occupancy: float,
     trial_seed: int,
@@ -662,6 +760,7 @@ def _validate_existing_trial(
     pilot._validate_existing_trial(
         path,
         protocol_fingerprint=protocol_fingerprint,
+        simulation_fingerprint=simulation_fingerprint,
         trial_seed=trial_seed,
         occupancy=occupancy,
         stim_region_labels=stim_region_labels,
@@ -796,6 +895,11 @@ def _build_trial_jobs(
                     _validate_existing_trial(
                         path,
                         protocol_fingerprint=protocol_fingerprint,
+                        simulation_fingerprint=getattr(
+                            args,
+                            "simulation_fingerprint",
+                            None,
+                        ),
                         config=config,
                         occupancy=occupancy,
                         trial_seed=trial_seed,
@@ -989,6 +1093,10 @@ def _run_trial(
         ),
         protocol_version=np.asarray([PROTOCOL_VERSION], dtype="U128"),
         protocol_fingerprint=np.asarray([protocol_fingerprint], dtype="U128"),
+        simulation_fingerprint=np.asarray(
+            [str(args.simulation_fingerprint)],
+            dtype="U128",
+        ),
         cohort=np.asarray([str(cohort)], dtype="U32"),
         condition=np.asarray([str(condition)], dtype="U32"),
         subject_id=np.asarray([str(subject_id)], dtype="U128"),
@@ -1137,6 +1245,11 @@ def _aggregate(
                 _validate_existing_trial(
                     path,
                     protocol_fingerprint=protocol_fingerprint,
+                    simulation_fingerprint=getattr(
+                        args,
+                        "simulation_fingerprint",
+                        None,
+                    ),
                     config=config,
                     occupancy=float(occupancy),
                     trial_seed=seed,
@@ -1171,9 +1284,12 @@ def _aggregate(
             pci_mean, pci_values = pilot._compute_pci_for_condition(
                 paths,
                 binarise_method=str(args.pci_binarise_method),
+                significance_method=str(args.pci_significance_method),
                 n_bootstrap=int(args.pci_bootstrap_replicates),
                 alpha=float(args.pci_alpha),
                 bootstrap_seed=int(args.pci_bootstrap_seed),
+                response_start_ms=float(args.pci_response_start_ms),
+                min_source_entropy=float(args.pci_min_source_entropy),
             )
             pci_values = np.asarray(pci_values, dtype=float)
             dose_rows.append(
@@ -1352,7 +1468,10 @@ def _aggregate(
         ]
     )
 
-    tables_dir = args.output_root / "tables"
+    analysis_output_root = Path(
+        getattr(args, "analysis_output_root", None) or args.output_root
+    )
+    tables_dir = analysis_output_root / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(_configuration_rows(configs)).to_csv(
         tables_dir / "serotonergic_pci_emcs_robustness_configurations.csv",
@@ -1374,7 +1493,12 @@ def _aggregate(
         tables_dir / "serotonergic_pci_emcs_robustness_stability_summary.csv",
         index=False,
     )
-    _plot_figure4(dose_metrics, config_summary, stability_summary, args.output_root)
+    _plot_figure4(
+        dose_metrics,
+        config_summary,
+        stability_summary,
+        analysis_output_root,
+    )
     return dose_metrics, trial_inputs, config_summary, stability_summary
 
 
@@ -1547,8 +1671,6 @@ def main() -> None:
     _validate_inputs(args)
     args.output_root.mkdir(parents=True, exist_ok=True)
     (args.output_root / "logs").mkdir(parents=True, exist_ok=True)
-    (args.output_root / "tables").mkdir(parents=True, exist_ok=True)
-    (args.output_root / "figures").mkdir(parents=True, exist_ok=True)
 
     subject = _select_subject(args.dataset_root, args.subject_id)
     atlas = pilot._resolve_stim_regions(args)
@@ -1613,13 +1735,33 @@ def main() -> None:
         return
 
     manifest_path = args.output_root / "logs" / "run_manifest.json"
-    _write_or_validate_manifest(
+    source_manifest = _write_or_validate_manifest(
         manifest_path,
         manifest,
         overwrite=bool(args.overwrite),
     )
+    args.simulation_fingerprint = str(manifest["simulation_fingerprint"])
+    args.analysis_fingerprint = str(manifest["analysis_fingerprint"])
+    args.protocol_fingerprint = pilot._trial_protocol_fingerprint(
+        source_manifest
+    )
+    args.analysis_output_root = pilot._resolve_analysis_output_root(
+        args.output_root,
+        manifest,
+        args.analysis_output_root,
+    )
+    analysis_manifest = pilot._build_analysis_manifest(
+        manifest,
+        source_manifest,
+        source_manifest_path=manifest_path,
+        output_root=args.analysis_output_root,
+    )
+    pilot._write_or_validate_analysis_manifest(
+        args.analysis_output_root / "logs" / "analysis_manifest.json",
+        analysis_manifest,
+    )
     _atomic_write_csv(
-        args.output_root
+        args.analysis_output_root
         / "tables"
         / "serotonergic_pci_emcs_robustness_configurations.csv",
         _configuration_rows(configs),
@@ -1636,7 +1778,7 @@ def main() -> None:
             receptor_map_sha256,
             stim_onsets,
             configs,
-            manifest["protocol_fingerprint"],
+            args.protocol_fingerprint,
         )
         print(
             "[sero-pci-emcs-robustness] "
@@ -1674,7 +1816,13 @@ def main() -> None:
         "%Y%m%dT%H%M%S"
     )
     _atomic_write_csv(
-        args.output_root / "logs" / f"completed_trials_{stamp}.csv",
+        (
+            args.analysis_output_root
+            if args.aggregate_only
+            else args.output_root
+        )
+        / "logs"
+        / f"completed_trials_{stamp}.csv",
         completed_rows,
     )
     print(
@@ -1693,7 +1841,7 @@ def main() -> None:
         args,
         subject,
         configs,
-        manifest["protocol_fingerprint"],
+        args.protocol_fingerprint,
         receptor_map_sha256,
         stim_onsets,
     )
@@ -1704,7 +1852,11 @@ def main() -> None:
         f"all_sign_stable={bool(stability.iloc[0]['all_configurations_preserve_result_sign'])}",
         flush=True,
     )
-    print(f"[sero-pci-emcs-robustness] output={args.output_root}", flush=True)
+    print(
+        "[sero-pci-emcs-robustness] analysis_output="
+        f"{args.analysis_output_root}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -56,9 +56,12 @@ python scripts/run_serotonergic_pci_full.py \
   --receptor-tracer cimbi \
   --receptor-csv "${TVB_REPO}/data/receptors/hansen_receptors_aal90.csv" \
   --pci-binarise-method casali \
-  --pci-bootstrap-replicates 500 \
-  --pci-alpha 0.01 \
-  --pci-bootstrap-seed 0 \
+  --pci-significance-method pre_post_swap \
+  --pci-permutation-replicates 1000 \
+  --pci-alpha 0.05 \
+  --pci-permutation-seed 0 \
+  --pci-response-start-ms 8 \
+  --pci-min-source-entropy 0.08 \
   --e-l-e-drug -61.2 \
   --e-l-i-drug -64.4 \
   --simulate-baseline

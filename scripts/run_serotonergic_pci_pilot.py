@@ -67,7 +67,9 @@ CONDITION_B_GRADIENT = {
 }
 
 PROTOCOL_VERSION = "3.1-time-locked-trial-average-atlas-aligned-provenance"
+ANALYSIS_PROTOCOL_VERSION = "1.0-casali-lz-significance-entropy"
 DEFAULT_STIM_REGION_LABEL = "Supp_Motor_Area_L"
+DEFAULT_PCI_ALPHA = 0.05
 DEFAULT_RECEPTOR_CSV = (
     _REPO_ROOT / "data" / "receptors" / "hansen_receptors_aal90.csv"
 )
@@ -85,6 +87,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-root",
         type=Path,
         default=_REPO_ROOT / "results" / "serotonergic_pci_pilot_corrected",
+    )
+    p.add_argument(
+        "--analysis-output-root",
+        type=Path,
+        default=None,
+        help=(
+            "Optional directory for PCI tables, figures, and the analysis "
+            "manifest. By default outputs are versioned under "
+            "OUTPUT_ROOT/analyses/ANALYSIS_FINGERPRINT."
+        ),
     )
     p.add_argument("--subjects-per-cohort", type=int, default=3)
     p.add_argument("--cohorts", nargs="+", default=["coma", "uws", "mcs", "emcs", "control"])
@@ -140,13 +152,60 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="casali",
         help=(
             "PCI significance route. 'casali' computes one PCI from the "
-            "trial-averaged, bootstrap-thresholded response; 'tvbsim' retains "
+            "statistically thresholded trial-averaged response; 'tvbsim' retains "
             "the legacy mean of per-trial PCI values."
         ),
     )
-    p.add_argument("--pci-bootstrap-replicates", type=int, default=500)
-    p.add_argument("--pci-alpha", type=float, default=0.01)
-    p.add_argument("--pci-bootstrap-seed", type=int, default=0)
+    p.add_argument(
+        "--pci-significance-method",
+        choices=["pre_post_swap", "temporal_shuffle", "trial_bootstrap"],
+        default="pre_post_swap",
+        help=(
+            "Null model for Casali source significance. The default exchanges "
+            "the complete equal-duration pre/post blocks within each trial, "
+            "matching the explicit Casali/Pantazis permutation procedure. "
+            "The other methods are sensitivity analyses only."
+        ),
+    )
+    p.add_argument(
+        "--pci-permutation-replicates",
+        "--pci-bootstrap-replicates",
+        dest="pci_bootstrap_replicates",
+        type=int,
+        default=1000,
+        help=(
+            "Number of null permutations (default: 1000). The older "
+            "--pci-bootstrap-replicates spelling remains as a CLI alias."
+        ),
+    )
+    p.add_argument("--pci-alpha", type=float, default=DEFAULT_PCI_ALPHA)
+    p.add_argument(
+        "--pci-permutation-seed",
+        "--pci-bootstrap-seed",
+        dest="pci_bootstrap_seed",
+        type=int,
+        default=0,
+    )
+    p.add_argument(
+        "--pci-response-start-ms",
+        type=float,
+        default=8.0,
+        help=(
+            "Start of the post-stimulation LZ matrix in milliseconds. The "
+            "default follows empirical PCI's 8 ms lower bound; at the model's "
+            "sampling interval this advances to the first complete sample at "
+            "or after 8 ms."
+        ),
+    )
+    p.add_argument(
+        "--pci-min-source-entropy",
+        type=float,
+        default=0.08,
+        help=(
+            "Set PCI to zero when significant source activity has entropy at "
+            "or below this value (empirical default: 0.08)."
+        ),
+    )
     p.add_argument("--e-l-e-drug", type=float, default=-61.2)
     p.add_argument("--e-l-i-drug", type=float, default=-64.4)
     p.add_argument(
@@ -209,20 +268,208 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _protocol_fingerprint(manifest: dict[str, Any]) -> str:
-    """Hash scientific protocol fields while excluding execution-only state."""
+def _simulation_protocol(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return only fields that can change a saved simulation trial.
+
+    PCI thresholding, response-window selection, entropy handling, and other
+    post-processing choices intentionally do not belong to this namespace.
+    This lets a completed simulation cache support multiple audited analyses.
+    """
+
     excluded = {
         "output_root",
+        "analysis_output_root",
         "workers",
         "overwrite",
+        "baseline_root",
         "protocol_fingerprint",
+        "simulation_fingerprint",
+        "analysis_fingerprint",
+        "analysis_protocol_version",
+        "source_protocol_fingerprint",
+        "source_simulation_fingerprint",
+        "source_run_manifest",
+        "source_run_manifest_sha256",
     }
     protocol = {
         key: value
         for key, value in manifest.items()
-        if key not in excluded
+        if key not in excluded and not str(key).startswith("pci_")
     }
+    return protocol
+
+
+def _simulation_fingerprint(manifest: dict[str, Any]) -> str:
+    """Hash immutable simulation fields, excluding all PCI post-processing."""
+
+    protocol = _simulation_protocol(manifest)
     return hashlib.sha256(_canonical_json(protocol).encode("utf-8")).hexdigest()
+
+
+def _protocol_fingerprint(manifest: dict[str, Any]) -> str:
+    """Backward-compatible alias for the immutable simulation fingerprint."""
+
+    return _simulation_fingerprint(manifest)
+
+
+def _manifest_simulation_fingerprint(manifest: dict[str, Any]) -> str:
+    """Return and, when present, verify a manifest's simulation fingerprint."""
+
+    calculated = _simulation_fingerprint(manifest)
+    claimed = manifest.get("simulation_fingerprint")
+    if claimed is not None and str(claimed) != calculated:
+        raise RuntimeError(
+            "Manifest simulation_fingerprint does not match its immutable "
+            "simulation fields."
+        )
+    return calculated
+
+
+def _analysis_protocol(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the complete post-processing protocol bound to one simulation."""
+
+    simulation_fingerprint = (
+        str(manifest["simulation_fingerprint"])
+        if manifest.get("simulation_fingerprint") is not None
+        else _simulation_fingerprint(manifest)
+    )
+    protocol: dict[str, Any] = {
+        "analysis_protocol_version": str(
+            manifest.get(
+                "analysis_protocol_version",
+                ANALYSIS_PROTOCOL_VERSION,
+            )
+        ),
+        "simulation_fingerprint": simulation_fingerprint,
+    }
+    protocol.update(
+        {
+            key: value
+            for key, value in manifest.items()
+            if str(key).startswith("pci_")
+        }
+    )
+    return protocol
+
+
+def _analysis_fingerprint(manifest: dict[str, Any]) -> str:
+    """Hash PCI post-processing settings separately from simulations."""
+
+    return hashlib.sha256(
+        _canonical_json(_analysis_protocol(manifest)).encode("utf-8")
+    ).hexdigest()
+
+
+def _trial_protocol_fingerprint(source_manifest: dict[str, Any]) -> str:
+    """Fingerprint stored in trial NPZs for this source cache.
+
+    Legacy corrected caches predate ``simulation_fingerprint`` and stored a
+    whole-run ``protocol_fingerprint``. Reusing those files requires checking
+    that exact historical value in addition to their immutable metadata.
+    """
+
+    if source_manifest.get("simulation_fingerprint") is not None:
+        return str(source_manifest["simulation_fingerprint"])
+    legacy = source_manifest.get("protocol_fingerprint")
+    if legacy is None:
+        raise RuntimeError(
+            "Source run manifest contains neither simulation_fingerprint nor "
+            "legacy protocol_fingerprint."
+        )
+    return str(legacy)
+
+
+def _resolve_analysis_output_root(
+    simulation_output_root: Path,
+    manifest: dict[str, Any],
+    requested: Path | None = None,
+) -> Path:
+    """Return a versioned directory that cannot collide across analyses."""
+
+    fingerprint = str(
+        manifest.get("analysis_fingerprint") or _analysis_fingerprint(manifest)
+    )
+    if requested is not None:
+        return Path(requested).expanduser().resolve()
+    return Path(simulation_output_root) / "analyses" / fingerprint
+
+
+def _build_analysis_manifest(
+    requested_manifest: dict[str, Any],
+    source_manifest: dict[str, Any],
+    *,
+    source_manifest_path: Path,
+    output_root: Path,
+) -> dict[str, Any]:
+    """Build post-processing provenance without modifying the source manifest."""
+
+    simulation_fingerprint = _manifest_simulation_fingerprint(
+        requested_manifest
+    )
+    analysis_fingerprint = str(
+        requested_manifest.get("analysis_fingerprint")
+        or _analysis_fingerprint(requested_manifest)
+    )
+    return {
+        "manifest_type": "serotonergic_pci_analysis",
+        "analysis_protocol_version": str(
+            requested_manifest.get(
+                "analysis_protocol_version",
+                ANALYSIS_PROTOCOL_VERSION,
+            )
+        ),
+        "analysis_fingerprint": analysis_fingerprint,
+        "analysis_protocol": _analysis_protocol(requested_manifest),
+        "simulation_fingerprint": simulation_fingerprint,
+        "source_simulation_fingerprint": _manifest_simulation_fingerprint(
+            source_manifest
+        ),
+        "source_protocol_fingerprint": _trial_protocol_fingerprint(
+            source_manifest
+        ),
+        "source_protocol_version": source_manifest.get("protocol_version"),
+        "source_run_manifest": str(source_manifest_path),
+        "source_run_manifest_sha256": hashlib.sha256(
+            Path(source_manifest_path).read_bytes()
+        ).hexdigest(),
+        "simulation_cache_root": str(
+            Path(requested_manifest["output_root"]) / "sims_pci"
+        ),
+        "output_root": str(output_root),
+        "subjects": requested_manifest.get("subjects"),
+        "trial_seeds": requested_manifest.get("trial_seeds"),
+        "occupancies": requested_manifest.get("occupancies"),
+        "n_subjects": requested_manifest.get("n_subjects"),
+        "n_trials": requested_manifest.get("n_trials"),
+    }
+
+
+def _write_or_validate_analysis_manifest(
+    path: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    """Write one immutable analysis manifest, or validate an exact rerun."""
+
+    if path.exists():
+        previous = json.loads(path.read_text(encoding="utf-8"))
+        checks = (
+            "analysis_fingerprint",
+            "simulation_fingerprint",
+            "source_simulation_fingerprint",
+            "source_protocol_fingerprint",
+            "source_run_manifest_sha256",
+        )
+        mismatches = [
+            key for key in checks if previous.get(key) != manifest.get(key)
+        ]
+        if mismatches:
+            raise RuntimeError(
+                "Existing analysis output has incompatible provenance "
+                f"({', '.join(mismatches)}): {path}"
+            )
+        return previous
+    _write_json(path, manifest)
+    return manifest
 
 
 def _atomic_savez(path: Path, **arrays: Any) -> None:
@@ -258,22 +505,35 @@ def _write_or_validate_manifest(
     manifest: dict[str, Any],
     *,
     overwrite: bool,
-) -> None:
+) -> dict[str, Any]:
+    requested_simulation_fingerprint = _manifest_simulation_fingerprint(
+        manifest
+    )
     if path.exists() and not overwrite:
         previous = json.loads(path.read_text(encoding="utf-8"))
-        if previous.get("protocol_fingerprint") != manifest["protocol_fingerprint"]:
+        previous_simulation_fingerprint = _manifest_simulation_fingerprint(
+            previous
+        )
+        if (
+            previous_simulation_fingerprint
+            != requested_simulation_fingerprint
+        ):
             raise RuntimeError(
-                "Existing output uses a different serotonergic PCI protocol. "
+                "Existing output uses a different serotonergic simulation "
+                "protocol. PCI analysis settings do not invalidate a compatible "
+                "simulation cache. "
                 f"Choose another --output-root or pass --overwrite: {path}"
             )
-        return
+        return previous
     _write_json(path, manifest)
+    return manifest
 
 
 def _validate_existing_trial(
     path: Path,
     *,
     protocol_fingerprint: str,
+    simulation_fingerprint: str | None = None,
     trial_seed: int,
     occupancy: float,
     stim_region_labels: list[str],
@@ -327,6 +587,13 @@ def _validate_existing_trial(
             )
             actual_fingerprint = str(
                 np.asarray(data["protocol_fingerprint"]).reshape(-1)[0]
+            )
+            actual_simulation_fingerprint = (
+                str(
+                    np.asarray(data["simulation_fingerprint"]).reshape(-1)[0]
+                )
+                if "simulation_fingerprint" in data.files
+                else None
             )
             actual_cohort = str(np.asarray(data["cohort"]).reshape(-1)[0])
             actual_condition = str(np.asarray(data["condition"]).reshape(-1)[0])
@@ -404,6 +671,12 @@ def _validate_existing_trial(
         mismatches.append("protocol_version")
     if actual_fingerprint != str(protocol_fingerprint):
         mismatches.append("protocol_fingerprint")
+    if (
+        actual_simulation_fingerprint is not None
+        and simulation_fingerprint is not None
+        and actual_simulation_fingerprint != str(simulation_fingerprint)
+    ):
+        mismatches.append("simulation_fingerprint")
     if actual_cohort != str(cohort):
         mismatches.append("cohort")
     if actual_condition != str(condition):
@@ -570,6 +843,10 @@ def _select_subjects(dataset_root: Path, cohorts: list[str], subjects_per_cohort
 def _validate_protocol_args(args: argparse.Namespace) -> None:
     args.dataset_root = Path(args.dataset_root).expanduser().resolve()
     args.output_root = Path(args.output_root).expanduser().resolve()
+    if args.analysis_output_root is not None:
+        args.analysis_output_root = (
+            Path(args.analysis_output_root).expanduser().resolve()
+        )
     args.receptor_csv = Path(args.receptor_csv).expanduser().resolve()
     args.trial_seeds = [int(seed) for seed in args.trial_seeds]
     args.occupancies = [float(occupancy) for occupancy in args.occupancies]
@@ -617,6 +894,13 @@ def _validate_protocol_args(args: argparse.Namespace) -> None:
         raise ValueError("--pci-bootstrap-replicates must be at least 1.")
     if not 0.0 < float(args.pci_alpha) < 1.0:
         raise ValueError("--pci-alpha must lie strictly between 0 and 1.")
+    if not 0.0 <= float(args.pci_response_start_ms) < float(args.t_analysis_ms):
+        raise ValueError(
+            "--pci-response-start-ms must be non-negative and smaller than "
+            "--t-analysis-ms."
+        )
+    if not 0.0 <= float(args.pci_min_source_entropy) <= 1.0:
+        raise ValueError("--pci-min-source-entropy must lie within [0, 1].")
 
 
 def _resolve_stim_regions(args: argparse.Namespace):
@@ -873,6 +1157,10 @@ def _run_trial(
             [str(args.protocol_fingerprint)],
             dtype="U128",
         ),
+        simulation_fingerprint=np.asarray(
+            [str(args.simulation_fingerprint)],
+            dtype="U128",
+        ),
         cohort=np.asarray([str(cohort)], dtype="U32"),
         condition=np.asarray([str(condition)], dtype="U32"),
         subject_id=np.asarray([str(subject_id)], dtype="U128"),
@@ -1032,9 +1320,12 @@ def _compute_pci_for_condition(
     paths: list[Path],
     *,
     binarise_method: str = "casali",
-    n_bootstrap: int = 500,
-    alpha: float = 0.01,
+    significance_method: str = "pre_post_swap",
+    n_bootstrap: int = 1000,
+    alpha: float = DEFAULT_PCI_ALPHA,
     bootstrap_seed: int = 0,
+    response_start_ms: float = 8.0,
+    min_source_entropy: float = 0.08,
 ) -> tuple[float, np.ndarray]:
     trials, onset, dt_ms, t_analysis_ms = _load_trials(paths)
     binarise_kwargs = None
@@ -1043,6 +1334,7 @@ def _compute_pci_for_condition(
             "n_bootstrap": int(n_bootstrap),
             "alpha": float(alpha),
             "seed": int(bootstrap_seed),
+            "significance_method": str(significance_method),
         }
     pci_mean, pci_values = pci_casali_like_multi_trial(
         trials,
@@ -1051,6 +1343,8 @@ def _compute_pci_for_condition(
         dt_ms=dt_ms,
         binarise_method=binarise_method,
         binarise_kwargs=binarise_kwargs,
+        response_start_ms=float(response_start_ms),
+        min_source_entropy=float(min_source_entropy),
     )
     if str(binarise_method).lower() == "casali" and np.asarray(pci_values).shape != (1,):
         raise AssertionError(
@@ -1183,15 +1477,28 @@ def main() -> None:
             "epoching to a common midpoint"
         ),
         "pci_binarise_method": str(args.pci_binarise_method),
+        "pci_significance_method": str(args.pci_significance_method),
+        "pci_familywise_error_scope": (
+            "maximum_across_sources_separately_at_each_response_latency"
+            if str(args.pci_significance_method) == "pre_post_swap"
+            else "sensitivity_analysis"
+        ),
         "pci_estimator": (
             "one Casali PCI from the baseline-normalized, time-locked "
             "trial-averaged response"
             if str(args.pci_binarise_method) == "casali"
             else "legacy mean of per-trial TVBSim PCI values"
         ),
+        "pci_permutation_replicates": int(args.pci_bootstrap_replicates),
         "pci_bootstrap_replicates": int(args.pci_bootstrap_replicates),
         "pci_alpha": float(args.pci_alpha),
+        "pci_permutation_seed": int(args.pci_bootstrap_seed),
         "pci_bootstrap_seed": int(args.pci_bootstrap_seed),
+        "pci_response_window_ms": [
+            float(args.pci_response_start_ms),
+            float(args.t_analysis_ms),
+        ],
+        "pci_min_source_entropy": float(args.pci_min_source_entropy),
         "atlas_ordering": str(atlas.ordering),
         "atlas_source": str(atlas.source),
         "atlas_labels_sha256": str(args.atlas_labels_sha256),
@@ -1224,12 +1531,35 @@ def main() -> None:
         "workers": int(args.workers),
         "overwrite": bool(args.overwrite),
     }
-    manifest["protocol_fingerprint"] = _protocol_fingerprint(manifest)
-    args.protocol_fingerprint = str(manifest["protocol_fingerprint"])
-    _write_or_validate_manifest(
-        args.output_root / "logs" / "run_manifest.json",
+    manifest["analysis_protocol_version"] = ANALYSIS_PROTOCOL_VERSION
+    manifest["simulation_fingerprint"] = _simulation_fingerprint(manifest)
+    # ``protocol_fingerprint`` remains as an on-disk compatibility alias for
+    # newly simulated NPZs. Legacy caches retain their historical value.
+    manifest["protocol_fingerprint"] = manifest["simulation_fingerprint"]
+    manifest["analysis_fingerprint"] = _analysis_fingerprint(manifest)
+    run_manifest_path = args.output_root / "logs" / "run_manifest.json"
+    source_manifest = _write_or_validate_manifest(
+        run_manifest_path,
         manifest,
         overwrite=bool(args.overwrite),
+    )
+    args.simulation_fingerprint = str(manifest["simulation_fingerprint"])
+    args.analysis_fingerprint = str(manifest["analysis_fingerprint"])
+    args.protocol_fingerprint = _trial_protocol_fingerprint(source_manifest)
+    args.analysis_output_root = _resolve_analysis_output_root(
+        args.output_root,
+        manifest,
+        args.analysis_output_root,
+    )
+    analysis_manifest = _build_analysis_manifest(
+        manifest,
+        source_manifest,
+        source_manifest_path=run_manifest_path,
+        output_root=args.analysis_output_root,
+    )
+    _write_or_validate_analysis_manifest(
+        args.analysis_output_root / "logs" / "analysis_manifest.json",
+        analysis_manifest,
     )
 
     if args.dry_run:
@@ -1250,6 +1580,7 @@ def main() -> None:
                     _validate_existing_trial(
                         save_path,
                         protocol_fingerprint=args.protocol_fingerprint,
+                        simulation_fingerprint=args.simulation_fingerprint,
                         trial_seed=trial_seed,
                         occupancy=occ,
                         stim_region_labels=args.stim_region_label,
@@ -1321,9 +1652,12 @@ def main() -> None:
             pci_mean, pci_per_trial = _compute_pci_for_condition(
                 paths,
                 binarise_method=args.pci_binarise_method,
+                significance_method=args.pci_significance_method,
                 n_bootstrap=args.pci_bootstrap_replicates,
                 alpha=args.pci_alpha,
                 bootstrap_seed=args.pci_bootstrap_seed,
+                response_start_ms=args.pci_response_start_ms,
+                min_source_entropy=args.pci_min_source_entropy,
             )
             metric_rows.append(
                 {
@@ -1351,9 +1685,17 @@ def main() -> None:
             )
 
     metrics = pd.DataFrame(metric_rows)
-    metrics.to_csv(args.output_root / "tables" / "serotonergic_pci_subject_metrics.csv", index=False)
-    _plot(metrics, args.output_root)
-    print(f"[sero-pci] wrote {args.output_root}")
+    analysis_tables = args.analysis_output_root / "tables"
+    analysis_tables.mkdir(parents=True, exist_ok=True)
+    metrics.to_csv(
+        analysis_tables / "serotonergic_pci_subject_metrics.csv",
+        index=False,
+    )
+    _plot(metrics, args.analysis_output_root)
+    print(
+        "[sero-pci] wrote versioned PCI analysis to "
+        f"{args.analysis_output_root}"
+    )
 
 
 if __name__ == "__main__":
