@@ -31,10 +31,18 @@ After pulling the branch on the cluster:
 sbatch hpc/submit_pci_stimulus_g_calibration.sh
 ```
 
-This is a three-subject calibration (CNT, MCS, UWS), not a cohort analysis.
-It retains the diagnosis-specific adaptation values and sweeps global coupling
-without renormalizing the connectomes. Inspect the generated response and
-saturation figures before selecting the production coupling value.
+This is a seven-subject calibration, not a cohort analysis: one control plus
+sedated/non-sedated pairs from EMCS, MCS, and UWS. Subjects were selected
+without examining PCI outcomes, with approximately matched disconnection
+within each sedation pair and increasing disconnection across diagnoses. All
+seven use a shared `b_e=10 pA`, so anatomical damage is isolated before the
+diagnosis-specific adaptation hypothesis is introduced.
+
+The workflow uses ten matched trials and proceeds in stages: pulse waveform,
+duration and amplitude at a reference coupling; global-coupling selection with
+the winning safe pulse; then homeostasis off, pre-fitted/frozen and online at
+the selected coupling. It reports both PCI-LZ and PCI-ST and saves the aligned
+90-region response time courses and subject-level evoked-response figures.
 
 ## Stage 2: full production run
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Calibrate left-SMA PCI stimulation, global coupling, and slow homeostasis.
 
-This is deliberately a two-subject *calibration*, not a cohort analysis.  It
-uses one control and one UWS connectome, the anatomically resolved left
-supplementary motor area, matched seeds, and both zero/maximal 5-HT2A
+This is deliberately a small-subject *calibration*, not a cohort analysis. It
+uses an outcome-blind structural-damage panel, the anatomically resolved left
+supplementary motor area, matched seeds, and configurable 5-HT2A
 occupancy.  It first compares pulse waveform/duration/amplitude at a reference
 G, then sweeps G using the automatically selected safe pulse.  An optional
 final stage learns regional inhibitory conductance during unstimulated epochs,
@@ -40,6 +40,8 @@ from brain_act_hybrid_common import (
 )
 
 from tvbtoolkit.core.config import WholeBrainConfig
+from tvbtoolkit.complexity.measures import pci_casali_like_multi_trial
+from tvbtoolkit.complexity.pci_st import PCIStResult, pci_st_from_trials
 from tvbtoolkit.datasets.brain_act import load_aal90_atlas, load_subject_structural
 from tvbtoolkit.whole_brain.homeostasis import (
     InhibitoryHomeostasisConfig,
@@ -118,6 +120,13 @@ def parse_args() -> argparse.Namespace:
         help="3 ms gives exact 333.33 Hz with dt=0.1 ms",
     )
     p.add_argument("--response-start-ms", type=float, default=8.0)
+    p.add_argument("--pci-permutation-replicates", type=int, default=1000)
+    p.add_argument("--pci-alpha", type=float, default=0.05)
+    p.add_argument("--pci-min-source-entropy", type=float, default=0.08)
+    p.add_argument("--pci-st-k", type=float, default=1.2)
+    p.add_argument("--pci-st-min-snr", type=float, default=1.1)
+    p.add_argument("--pci-st-max-var-percent", type=float, default=99.0)
+    p.add_argument("--pci-st-n-steps", type=int, default=100)
     p.add_argument("--saturation-hz", type=float, default=100.0)
     p.add_argument("--stim-region-label", default=pilot.DEFAULT_STIM_REGION_LABEL)
     p.add_argument(
@@ -210,6 +219,10 @@ def _validate(args: argparse.Namespace) -> None:
     )
     if any(x <= 0 for x in args.durations_ms + args.amplitudes_khz + args.g_values):
         raise ValueError("Durations, amplitudes, and G values must be positive.")
+    if len(args.trial_seeds) != 10:
+        raise ValueError("The seven-subject calibration requires exactly 10 trials.")
+    if not 0.0 < float(args.pci_alpha) < 1.0:
+        raise ValueError("--pci-alpha must lie between zero and one.")
     if args.monitor_period_ms / 0.1 != round(args.monitor_period_ms / 0.1):
         raise ValueError(
             "Monitor period must be an exact multiple of the 0.1-ms integrator step."
@@ -221,6 +234,16 @@ def _validate(args: argparse.Namespace) -> None:
 
 
 def _subjects(args: argparse.Namespace):
+    if args.subject:
+        selected = pilot._select_subjects(
+            args.dataset_root,
+            ["control", "emcs", "mcs", "uws"],
+            10**9,
+            explicit_subjects=args.subject,
+        )
+        if len(selected) != 7:
+            raise ValueError("Explicit calibration selection must contain 7 subjects.")
+        return selected
     selected = pilot._select_subjects(
         args.dataset_root,
         ["control", "mcs", "uws"],
@@ -233,6 +256,43 @@ def _subjects(args: argparse.Namespace):
             "Calibration requires exactly one control, one MCS, and one UWS subject."
         )
     return selected
+
+
+def _subject_selection_metadata(args: argparse.Namespace, jobs) -> list[dict[str, Any]]:
+    """Describe the outcome-blind calibration panel from dataset provenance."""
+    index = json.loads((args.dataset_root / "index.json").read_text(encoding="utf-8"))
+    metadata = {
+        (str(item["cohort"]), str(item["subject_id"])): item
+        for item in index["subjects"]
+    }
+    records = []
+    for job in jobs:
+        weights, _, _, _ = load_subject_structural(
+            subject_id=job.subject_id,
+            cohort=job.cohort,
+            dataset_root=args.dataset_root,
+            validate=True,
+            enforce_symmetry=True,
+            zero_diagonal=True,
+        )
+        upper = np.triu_indices(weights.shape[0], k=1)
+        zero_percent = 100.0 * float(np.mean(np.asarray(weights)[upper] <= 0.0))
+        item = metadata[(job.cohort, job.subject_id)]
+        records.append(
+            {
+                "cohort": job.cohort,
+                "condition": job.condition,
+                "subject_id": job.subject_id,
+                "stage": str(item.get("stage", "")),
+                "sedation": str(item.get("sedation", "")),
+                "zero_masked_connections_percent": zero_percent,
+                "selection_basis": (
+                    "outcome-blind structural calibration; sedation pair "
+                    "matched approximately within diagnosis"
+                ),
+            }
+        )
+    return records
 
 
 def _pulse_values(
@@ -524,8 +584,31 @@ def _select_pulse(frame: pd.DataFrame, args: argparse.Namespace) -> dict[str, An
     }
 
 
+def _select_g(frame: pd.DataFrame, args: argparse.Namespace) -> float:
+    """Select a non-saturating G with propagation and recovery across subjects."""
+    summary = frame.groupby("G", as_index=False).agg(
+        peak_abs_hz=("peak_abs_hz", "max"),
+        saturated_fraction=("saturated_fraction", "max"),
+        propagated_regions=("propagated_regions", "median"),
+        late_residual_hz=("late_residual_hz", "median"),
+        pci_st=("pci_st", "median"),
+    )
+    safe = summary.loc[
+        summary["peak_abs_hz"].lt(float(args.saturation_hz))
+        & summary["saturated_fraction"].eq(0.0)
+    ].copy()
+    if safe.empty:
+        raise RuntimeError("No global-coupling value avoided saturation.")
+    safe["score"] = (
+        safe["propagated_regions"] / 90.0
+        + np.minimum(safe["pci_st"], 100.0) / 100.0
+        - safe["late_residual_hz"] / 10.0
+    )
+    return float(safe.sort_values(["score", "G"], ascending=[False, True]).iloc[0]["G"])
+
+
 def _aggregate_trials(rows, group_keys, args):
-    """Time-lock, average matched trials, then compute response metrics."""
+    """Time-lock trials and compute evoked metrics, PCI-LZ, and PCI-ST."""
     grouped = {}
     for row in rows:
         key = tuple(row[name] for name in group_keys)
@@ -546,8 +629,74 @@ def _aggregate_trials(rows, group_keys, args):
         row.update(_metrics(reference_time + onset, averaged_rate_khz, args=args))
         row["time_relative_ms"] = reference_time
         row["rate_hz"] = averaged_rate_khz * 1000.0
+        aligned_trials = [
+            np.asarray(trial["rate_hz"], dtype=float) / 1000.0 for trial in trials
+        ]
+        onset_index = int(np.argmin(np.abs(reference_time)))
+        dt_ms = float(np.median(np.diff(reference_time)))
+        lz = pci_casali_like_multi_trial(
+            aligned_trials,
+            stimulation_index=onset_index,
+            t_analysis_ms=float(args.analysis_ms),
+            dt_ms=dt_ms,
+            binarise_method="casali",
+            binarise_kwargs={
+                "n_bootstrap": int(args.pci_permutation_replicates),
+                "alpha": float(args.pci_alpha),
+                "seed": 0,
+                "significance_method": "pre_post_swap",
+            },
+            response_start_ms=float(args.response_start_ms),
+            min_source_entropy=float(args.pci_min_source_entropy),
+        )
+        row["pci_lz"] = float(lz[0])
+        trial_stack = np.stack(
+            [np.asarray(trial, dtype=float).T for trial in aligned_trials], axis=0
+        )
+        st = pci_st_from_trials(
+            trial_stack,
+            reference_time,
+            baseline_center_trials=True,
+            baseline_window_ms=(-float(args.analysis_ms), -50.0),
+            response_window_ms=(float(args.response_start_ms), float(args.analysis_ms)),
+            k=float(args.pci_st_k),
+            min_snr=float(args.pci_st_min_snr),
+            max_var_percent=float(args.pci_st_max_var_percent),
+            n_steps=int(args.pci_st_n_steps),
+            return_details=True,
+        )
+        if not isinstance(st, PCIStResult):
+            raise AssertionError("Detailed PCI-ST result was not returned.")
+        row["pci_st"] = float(st.pci_st)
+        row["pci_st_n_components"] = int(st.n_components)
         out.append(row)
     return out
+
+
+def _save_aligned_time_courses(rows, output_dir: Path, family: str) -> None:
+    """Save each ten-trial average without expanding arrays into CSV cells."""
+    root = output_dir / "aligned_time_courses" / family
+    root.mkdir(parents=True, exist_ok=True)
+    for row in rows:
+        parts = [
+            str(row.get("condition", "condition")),
+            str(row.get("subject_id", "subject")),
+            f"g_{float(row.get('G', 0.0)):.6g}",
+            str(row.get("shape", "pulse")),
+            f"dur_{float(row.get('duration_ms', 0.0)):.6g}",
+            f"amp_{float(row.get('amplitude_khz', 0.0)):.6g}",
+        ]
+        if "homeostasis" in row:
+            parts.append(str(row["homeostasis"]))
+        filename = "__".join(parts).replace("/", "-") + ".npz"
+        np.savez_compressed(
+            root / filename,
+            time_relative_ms=np.asarray(row["time_relative_ms"], dtype=float),
+            rate_hz=np.asarray(row["rate_hz"], dtype=float),
+            n_trials=np.asarray([int(row["n_time_locked_trials"])]),
+            pci_lz=np.asarray([float(row["pci_lz"])]),
+            pci_st=np.asarray([float(row["pci_st"])]),
+        )
 
 
 def _learn_q_i(job, occupancy, g_value, receptor, target_khz, args):
@@ -639,7 +788,10 @@ def _homeostasis_task(payload):
     return rows, history
 
 
-def _save_figures(pulse_df, g_df, homeo_df, homeo_rows, histories, winner, args):
+def _save_figures(
+    pulse_df, g_df, g_average_rows, homeo_df, homeo_rows, histories,
+    winner, selected_g, args
+):
     _style()
     fig_dir = args.output_root / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
@@ -685,6 +837,69 @@ def _save_figures(pulse_df, g_df, homeo_df, homeo_rows, histories, winner, args)
             fig_dir / f"stimulus_calibration.{ext}", dpi=600 if ext == "png" else None
         )
     plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.6), constrained_layout=True)
+    for ax, metric, title in (
+        (axes[0], "pci_lz", "A  PCI-LZ"),
+        (axes[1], "pci_st", "B  PCI-ST"),
+    ):
+        sns.lineplot(
+            data=g_df,
+            x="G",
+            y=metric,
+            hue="condition",
+            palette=COND_COLORS,
+            marker="o",
+            estimator=None,
+            ax=ax,
+        )
+        ax.set_title(title, loc="left")
+        ax.set_ylabel(metric.upper().replace("_", "-"))
+        if ax is axes[1] and ax.get_legend() is not None:
+            ax.get_legend().remove()
+    sns.despine(fig=fig)
+    for ext in ("pdf", "png"):
+        fig.savefig(
+            fig_dir / f"dual_pci_calibration.{ext}",
+            dpi=600 if ext == "png" else None,
+        )
+    plt.close(fig)
+
+    for row in g_average_rows:
+        if not np.isclose(float(row["G"]), float(selected_g)):
+            continue
+        times = np.asarray(row["time_relative_ms"], dtype=float)
+        rates = np.asarray(row["rate_hz"], dtype=float)
+        baseline = rates[times < 0.0].mean(axis=0, keepdims=True)
+        delta = rates - baseline
+        fig, axes = plt.subplots(2, 1, figsize=(6.4, 4.7), sharex=True,
+                                 constrained_layout=True)
+        axes[0].plot(times, delta, color=COND_COLORS[row["condition"]],
+                     lw=0.45, alpha=0.22)
+        axes[0].plot(times, delta.mean(axis=1), color="#111111", lw=1.7)
+        axes[0].axvline(0.0, color="#222222", lw=0.8, ls="--")
+        axes[0].set_ylabel("Δ firing rate (Hz)")
+        axes[0].set_title(
+            f"{row['condition']} {row['subject_id']} — regional evoked responses",
+            loc="left",
+        )
+        axes[1].imshow(
+            delta.T,
+            aspect="auto",
+            origin="lower",
+            extent=[times[0], times[-1], 1, delta.shape[1]],
+            cmap="RdBu_r",
+            vmin=-np.nanpercentile(np.abs(delta), 99),
+            vmax=np.nanpercentile(np.abs(delta), 99),
+            interpolation="nearest",
+        )
+        axes[1].axvline(0.0, color="#222222", lw=0.8, ls="--")
+        axes[1].set(xlabel="Time from stimulation (ms)", ylabel="AAL90 region")
+        sns.despine(fig=fig)
+        stem = fig_dir / f"evoked_timecourse_{row['condition']}_{row['subject_id']}"
+        for ext in ("pdf", "png"):
+            fig.savefig(stem.with_suffix(f".{ext}"), dpi=600 if ext == "png" else None)
+        plt.close(fig)
 
     fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.45), constrained_layout=True)
     for ax, metric, ylabel in zip(
@@ -764,7 +979,6 @@ def _save_figures(pulse_df, g_df, homeo_df, homeo_rows, histories, winner, args)
             )
         plt.close(fig)
 
-        selected_g = min(args.g_values, key=lambda value: abs(value - args.reference_g))
         selected_rows = [
             row
             for row in homeo_rows
@@ -872,7 +1086,12 @@ def _strip_arrays(rows):
 def main() -> None:
     args = parse_args()
     _validate(args)
+    args.output_root.mkdir(parents=True, exist_ok=True)
     jobs = _subjects(args)
+    selection_metadata = _subject_selection_metadata(args, jobs)
+    pd.DataFrame(selection_metadata).to_csv(
+        args.output_root / "calibration_subjects.csv", index=False
+    )
     atlas = load_aal90_atlas(args.dataset_root)
     labels = list(np.asarray(atlas.labels).astype(str))
     if args.stim_region_label not in labels:
@@ -882,7 +1101,6 @@ def main() -> None:
         tracer=args.receptor_tracer, csv_path=args.receptor_csv, target_labels=labels
     )
     manifest_path = args.output_root / "run_manifest.json"
-    args.output_root.mkdir(parents=True, exist_ok=True)
 
     planned_pulse = (
         len(jobs)
@@ -895,9 +1113,9 @@ def main() -> None:
     planned_g = (
         len(jobs) * len(args.occupancies) * len(args.trial_seeds) * len(args.g_values)
     )
-    homeostasis_g_values = (
-        [float(args.reference_g)] if args.quick_local else list(args.g_values)
-    )
+    # Homeostasis is a focused method comparison at the reference G, after the
+    # pulse grid; it is not multiplied across the complete coupling sweep.
+    homeostasis_g_values = [float(args.reference_g)]
     planned_homeostasis = 0
     if args.homeostasis == "compare":
         target_runs = (
@@ -1022,6 +1240,8 @@ def main() -> None:
     )
     g_df = pd.DataFrame(_strip_arrays(g_average_rows))
     g_df.to_csv(args.output_root / "global_coupling_metrics.csv", index=False)
+    selected_g = _select_g(g_df, args)
+    homeostasis_g_values = [selected_g]
 
     homeo_rows, histories = [], []
     if args.homeostasis == "compare":
@@ -1108,11 +1328,27 @@ def main() -> None:
     else:
         homeo_df = pd.DataFrame()
 
-    _save_figures(pulse_df, g_df, homeo_df, homeo_rows, histories, winner, args)
+    _save_aligned_time_courses(pulse_average_rows, args.output_root, "pulse")
+    _save_aligned_time_courses(g_average_rows, args.output_root, "global_coupling")
+    if homeo_df is not None and not homeo_df.empty:
+        _save_aligned_time_courses(homeo_average_rows, args.output_root, "homeostasis")
+    _save_figures(
+        pulse_df,
+        g_df,
+        g_average_rows,
+        homeo_df,
+        homeo_rows,
+        histories,
+        winner,
+        selected_g,
+        args,
+    )
     manifest = {
-        "purpose": "two-subject calibration only; not inferential cohort analysis",
+        "purpose": "seven-subject calibration only; not inferential cohort analysis",
         "selected_pulse": winner,
+        "selected_global_coupling": selected_g,
         "subjects": [asdict(job) for job in jobs],
+        "subject_selection": selection_metadata,
         "stimulus_target": {
             "label": args.stim_region_label,
             "zero_based_index": args.stim_region_index,
@@ -1142,7 +1378,19 @@ def main() -> None:
             "comparison_modes": ["off", "prefit_frozen", "online"],
         },
         "shared_b_e_pA": args.shared_b_e,
-        "diagnosis_b_gradient_disabled_for_calibration": True,
+        "diagnosis_b_gradient_disabled_for_calibration": args.shared_b_e is not None,
+        "pci": {
+            "n_trials": len(args.trial_seeds),
+            "estimators": ["PCI-LZ", "PCI-ST"],
+            "response_start_ms": args.response_start_ms,
+            "lz_significance": "pre_post_swap",
+            "lz_permutations": args.pci_permutation_replicates,
+            "lz_alpha": args.pci_alpha,
+            "st_k": args.pci_st_k,
+            "st_min_snr": args.pci_st_min_snr,
+            "st_max_var_percent": args.pci_st_max_var_percent,
+            "st_n_steps": args.pci_st_n_steps,
+        },
         "G_values": args.g_values,
         "structural_connectivity_normalization": str(
             args.structural_connectivity_normalization

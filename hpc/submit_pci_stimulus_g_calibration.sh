@@ -3,9 +3,9 @@
 #SBATCH --partition=workq
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=48
 #SBATCH --mem=0
-#SBATCH --time=2-00:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --output=hpc/logs/%x-%j.out
 #SBATCH --error=hpc/logs/%x-%j.err
 
@@ -18,23 +18,31 @@ OUTPUT_ROOT="${PCI_CALIBRATION_OUTPUT_ROOT:-${TVB_REPO}/notebooks/outputs/pci_st
 echo "[pci-calibration] dataset_root=${DATASET_ROOT}"
 echo "[pci-calibration] output_root=${OUTPUT_ROOT}"
 require_native_invnodevol_dataset "${DATASET_ROOT}"
-echo "[pci-calibration] left-SMA target; control + MCS + UWS; diagnosis b_e retained"
+echo "[pci-calibration] seven-subject left-SMA calibration; shared b_e=10 pA"
 
 python scripts/calibrate_pci_stimulus_g_homeostasis.py \
   "$@" \
   --dataset-root "${DATASET_ROOT}" \
   --output-root "${OUTPUT_ROOT}" \
-  --occupancies 0 0.766 \
-  --trial-seeds 0 1 2 \
+  --subject control:c0015 \
+  --subject emcs:e0003 \
+  --subject emcs:e0008 \
+  --subject mcs:m0005 \
+  --subject mcs:m0009 \
+  --subject uws:u0020 \
+  --subject uws:u0038 \
+  --occupancies 0 \
+  --trial-seeds 0 1 2 3 4 5 6 7 8 9 \
   --pulse-shapes square raised_cosine gaussian \
   --durations-ms 1 5 10 \
   --amplitudes-khz 0.00010 0.00020 0.00030 0.00050 \
   --g-values 0.0025 0.005 0.01 0.025 0.05 \
   --reference-g 0.01 \
+  --shared-b-e 10 \
   --monitor-period-ms 3 \
   --response-start-ms 8 \
   --stim-region-label Supp_Motor_Area_L \
-  --homeostasis off \
+  --homeostasis compare \
   --homeostatic-target baseline \
   --homeostatic-epochs 6 \
   --homeostatic-epoch-ms 1000 \
@@ -42,6 +50,13 @@ python scripts/calibrate_pci_stimulus_g_homeostasis.py \
   --homeostatic-detector-tau-ms 50 \
   --homeostatic-activation-sd 5 \
   --homeostatic-post-ms 1500 \
+  --pci-permutation-replicates 1000 \
+  --pci-alpha 0.05 \
+  --pci-min-source-entropy 0.08 \
+  --pci-st-k 1.2 \
+  --pci-st-min-snr 1.1 \
+  --pci-st-max-var-percent 99 \
+  --pci-st-n-steps 100 \
   --workers "${SLURM_CPUS_PER_TASK}"
 
 echo "[pci-calibration] complete; figures are in ${OUTPUT_ROOT}/figures"
