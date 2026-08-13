@@ -71,17 +71,24 @@ def _safe_pearson(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(xa, xb)[0, 1])
 
 
-def _apply_damage_parity(c: np.ndarray, l: np.ndarray, cohort: str) -> tuple[np.ndarray, np.ndarray, float]:
-    """Apply damage masking then max-normalise the SC weights.
+def _apply_damage_parity(
+    c: np.ndarray,
+    l: np.ndarray,
+    cohort: str,
+    *,
+    normalize_subject_max: bool = True,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Apply damage masking and, for legacy runs, subject-max scaling.
 
     Order matters:
       1. Zero diagonal.
       2. For patient cohorts: zero tract lengths where SC weight is 0
          (damaged/absent connections cannot carry signal).
-      3. Max-normalise SC weights over the surviving (non-zero) edges so that
-         weights are in [0, 1] regardless of raw fibre-count scale.
-         Normalisation is applied after masking so the reference maximum is
-         taken from surviving connections only.
+      3. Optionally max-normalise surviving weights for legacy reproduction.
+
+    New cohort-global-normalized datasets must pass
+    ``normalize_subject_max=False`` so their shared between-subject scale is
+    not erased.
     """
     c = np.asarray(c, dtype=float).copy()
     l = np.asarray(l, dtype=float).copy()
@@ -95,9 +102,10 @@ def _apply_damage_parity(c: np.ndarray, l: np.ndarray, cohort: str) -> tuple[np.
             l[mismatch] = 0.0
 
     # ── Max-normalise over surviving edges ────────────────────────────────────
-    c_max = float(np.max(c))
-    if c_max > 0.0:
-        c = c / c_max
+    if normalize_subject_max:
+        c_max = float(np.max(c))
+        if c_max > 0.0:
+            c = c / c_max
 
     iu = np.triu_indices_from(c, k=1)
     return c, l, float(np.mean(c[iu] == 0.0))

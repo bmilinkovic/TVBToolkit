@@ -66,8 +66,8 @@ CONDITION_B_GRADIENT = {
     "COMA": 75.0,
 }
 
-PROTOCOL_VERSION = "3.1-time-locked-trial-average-atlas-aligned-provenance"
-ANALYSIS_PROTOCOL_VERSION = "1.0-casali-lz-significance-entropy"
+PROTOCOL_VERSION = "6.0-native-invnodevol-time-locked-dual-pci"
+ANALYSIS_PROTOCOL_VERSION = "2.0-pci-lz-pci-st"
 DEFAULT_STIM_REGION_LABEL = "Supp_Motor_Area_L"
 DEFAULT_PCI_ALPHA = 0.05
 DEFAULT_RECEPTOR_CSV = (
@@ -112,8 +112,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--transient-ms", type=float, default=4000.0)
     p.add_argument("--t-analysis-ms", type=float, default=300.0)
     p.add_argument("--trial-sim-ms", type=float, default=8000.0)
+    p.add_argument(
+        "--rate-monitor-period-ms",
+        type=float,
+        default=3.0,
+        help=(
+            "Temporal-average sampling period for PCI (default: 3 ms, "
+            "333.33 Hz; the model-compatible approximation to 340 Hz)."
+        ),
+    )
     p.add_argument("--stim-amplitude", type=float, default=0.00030)
     p.add_argument("--stim-duration-ms", type=float, default=10.0)
+    p.add_argument(
+        "--coupling-strength",
+        type=float,
+        default=0.25,
+        help="Global long-range coupling G (pilot default: legacy value 0.25).",
+    )
     target_group = p.add_mutually_exclusive_group()
     target_group.add_argument(
         "--stim-region",
@@ -855,6 +870,28 @@ def _validate_protocol_args(args: argparse.Namespace) -> None:
         raise FileNotFoundError(
             f"Converted dataset index not found: {args.dataset_root / 'index.json'}"
         )
+    dataset_index = json.loads(
+        (args.dataset_root / "index.json").read_text(encoding="utf-8")
+    )
+    normalization = dict(dataset_index.get("connectivity_normalization", {}))
+    args.structural_connectivity_normalization = str(
+        normalization.get("scheme", "legacy_column_sum")
+    )
+    args.structural_connectivity_normalization_divisor = normalization.get(
+        "divisor"
+    )
+    declared_simulator_normalization = normalization.get("simulator_normalization")
+    if declared_simulator_normalization is not None:
+        args.simulator_connectivity_normalization = str(
+            declared_simulator_normalization
+        )
+    else:
+        args.simulator_connectivity_normalization = (
+            "none"
+            if args.structural_connectivity_normalization
+            in {"cohort_global_max", "native_invnodevol", "native_raw"}
+            else "legacy_column_sum"
+        )
     if not args.receptor_csv.is_file():
         raise FileNotFoundError(f"Receptor table not found: {args.receptor_csv}")
     if not args.trial_seeds:
@@ -886,8 +923,12 @@ def _validate_protocol_args(args: argparse.Namespace) -> None:
         )
     if float(args.stim_duration_ms) <= 0.0:
         raise ValueError("--stim-duration-ms must be positive.")
+    if float(args.rate_monitor_period_ms) <= 0.0:
+        raise ValueError("--rate-monitor-period-ms must be positive.")
     if not np.isfinite(float(args.stim_amplitude)):
         raise ValueError("--stim-amplitude must be finite.")
+    if not np.isfinite(float(args.coupling_strength)) or float(args.coupling_strength) <= 0.0:
+        raise ValueError("--coupling-strength must be finite and positive.")
     if int(args.workers) < 1:
         raise ValueError("--workers must be at least 1.")
     if int(args.pci_bootstrap_replicates) < 1:
@@ -1055,7 +1096,15 @@ def _run_trial(
         raise ValueError("Aligned receptor map must contain 90 finite values.")
     if receptor_map_sha256 != str(args.receptor_map_sha256):
         raise RuntimeError("Receptor-map hash changed between setup and simulation.")
-    c, l, sc_zero_frac = _apply_damage_parity(c, l, cohort)
+    c, l, sc_zero_frac = _apply_damage_parity(
+        c,
+        l,
+        cohort,
+        normalize_subject_max=(
+            str(args.structural_connectivity_normalization)
+            not in {"cohort_global_max", "native_invnodevol", "native_raw"}
+        ),
+    )
 
     parameter_model = _build_parameter_model(condition, occupancy, receptor_map, args)
     parameter_model.update(
@@ -1078,7 +1127,7 @@ def _run_trial(
         simulation_length_ms=float(args.trial_sim_ms),
         dt_ms=0.1,
         conduction_speed=4.0,
-        coupling_strength=0.25,
+        coupling_strength=float(args.coupling_strength),
         model_family="adex_zerlaut",
         zerlaut_matteo=False,
         zerlaut_gk_gna=bool(
@@ -1088,10 +1137,13 @@ def _run_trial(
         zerlaut_order=2,
         stochastic_integrator=True,
         monitor_mode="temporal_average",
-        temporal_average_period_ms=float(RATE_MONITOR_PERIOD_MS_OLD),
+        temporal_average_period_ms=float(args.rate_monitor_period_ms),
         monitor_variables=(0, 1),
         weights=np.asarray(c, dtype=float),
         tract_lengths=np.asarray(l, dtype=float),
+        connectivity_normalization=str(
+            args.simulator_connectivity_normalization
+        ),
         parameter_overrides={
             "parameter_model": parameter_model,
             "parameter_stimulus": parameter_stimulus,
@@ -1177,7 +1229,7 @@ def _run_trial(
             dtype="U128",
         ),
         t_analysis_ms=np.array([float(args.t_analysis_ms)]),
-        rate_monitor_period_ms=np.array([float(RATE_MONITOR_PERIOD_MS_OLD)]),
+        rate_monitor_period_ms=np.array([float(args.rate_monitor_period_ms)]),
         trial_seed=np.array([int(trial_seed)]),
         noise_alpha=np.array([float(scenario_cfg["noise_alpha"])]),
         stim_amplitude=np.array([float(args.stim_amplitude)]),
@@ -1188,6 +1240,15 @@ def _run_trial(
             dtype="U128",
         ),
         occupancy=np.array([float(occupancy)]),
+        b_e_pA=np.array(
+            [
+                float(
+                    CONDITION_B_GRADIENT[condition]
+                    if getattr(args, "b_e_override", None) is None
+                    else args.b_e_override
+                )
+            ]
+        ),
         sc_zero_fraction_upper=np.array([float(sc_zero_frac)]),
     )
 
@@ -1466,9 +1527,21 @@ def main() -> None:
         "t_analysis_ms": float(args.t_analysis_ms),
         "trial_sim_ms": float(args.trial_sim_ms),
         "integration_dt_ms": 0.1,
-        "rate_monitor_period_ms": float(RATE_MONITOR_PERIOD_MS_OLD),
+        "rate_monitor_period_ms": float(args.rate_monitor_period_ms),
+        "rate_monitor_sampling_hz": 1000.0 / float(args.rate_monitor_period_ms),
         "conduction_speed": 4.0,
-        "coupling_strength": 0.25,
+        "coupling_strength": float(args.coupling_strength),
+        "structural_connectivity_normalization": str(
+            args.structural_connectivity_normalization
+        ),
+        "structural_connectivity_normalization_divisor": (
+            None
+            if args.structural_connectivity_normalization_divisor is None
+            else float(args.structural_connectivity_normalization_divisor)
+        ),
+        "simulator_connectivity_normalization": str(
+            args.simulator_connectivity_normalization
+        ),
         "stim_amplitude": float(args.stim_amplitude),
         "stim_duration_ms": float(args.stim_duration_ms),
         "stim_variables": [0],
@@ -1615,11 +1688,11 @@ def main() -> None:
     completed_rows: list[dict[str, Any]] = []
     print(f"[sero-pci] queued {len(trial_jobs)} serotonergic trial simulations on {int(args.workers)} workers", flush=True)
     if trial_jobs:
-        with ProcessPoolExecutor(max_workers=int(args.workers), initializer=worker_initializer) as ex:
-            futures = [ex.submit(_run_trial_job, job) for job in trial_jobs]
-            total = len(futures)
-            for i, fut in enumerate(as_completed(futures), start=1):
-                row = fut.result()
+        total = len(trial_jobs)
+        if int(args.workers) == 1:
+            worker_initializer()
+            row_iterator = (_run_trial_job(job) for job in trial_jobs)
+            for i, row in enumerate(row_iterator, start=1):
                 completed_rows.append(row)
                 print(
                     "[sero-pci] "
@@ -1628,6 +1701,19 @@ def main() -> None:
                     f"runtime={row['runtime_s']:.1f}s",
                     flush=True,
                 )
+        else:
+            with ProcessPoolExecutor(max_workers=int(args.workers), initializer=worker_initializer) as ex:
+                futures = [ex.submit(_run_trial_job, job) for job in trial_jobs]
+                for i, fut in enumerate(as_completed(futures), start=1):
+                    row = fut.result()
+                    completed_rows.append(row)
+                    print(
+                        "[sero-pci] "
+                        f"{i}/{total} done occ={row['occupancy']:.3f} "
+                        f"{row['condition']}/{row['subject_id']} trial={row['trial_seed']} "
+                        f"runtime={row['runtime_s']:.1f}s",
+                        flush=True,
+                    )
     _write_csv(args.output_root / "logs" / "completed_trials.csv", completed_rows)
 
     metric_rows: list[dict[str, Any]] = []

@@ -376,6 +376,14 @@ def test_production_defaults_lock_one_hundred_casali_trials() -> None:
     assert args.pci_alpha == 0.05
     assert args.pci_response_start_ms == 8.0
     assert args.pci_min_source_entropy == 0.08
+    assert args.pci_st_baseline_window_ms == [-300.0, -50.0]
+    assert args.pci_st_response_window_ms == [8.0, 300.0]
+    assert args.pci_st_k == 1.2
+    assert args.pci_st_min_snr == 1.1
+    assert args.pci_st_max_var_percent == 99.0
+    assert args.pci_st_n_steps == 100
+    assert args.rate_monitor_period_ms == 3.0
+    assert args.coupling_strength is None
     assert args.simulate_baseline is True
     assert args.split_model_all_occupancies is True
 

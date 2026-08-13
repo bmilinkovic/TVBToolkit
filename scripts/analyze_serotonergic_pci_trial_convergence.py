@@ -149,9 +149,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--pci-st-response-window-ms",
         type=float,
         nargs=2,
-        default=[0.0, 300.0],
+        default=[8.0, 300.0],
         metavar=("START", "STOP"),
-        help="PCI-ST response window; official default is [0, 300) ms.",
+        help=(
+            "PCI-ST response window. This simulation protocol begins at 8 ms "
+            "to exclude the imposed stimulation pulse/artefact."
+        ),
     )
     parser.add_argument("--pci-st-k", type=float, default=1.2)
     parser.add_argument("--pci-st-min-snr", type=float, default=1.1)

@@ -239,6 +239,12 @@ class Zerlaut_adaptation_first_order(Model):
         domain=Range(lo=0.0, hi=10.0, step=0.1),
         doc="""inhibitory quantal conductance [nS]""")
 
+    Q_i_e = NArray(
+        label=r":math:`Q_{i\rightarrow e}`",
+        default=numpy.array([5.0]),
+        domain=Range(lo=0.0, hi=20.0, step=0.1),
+        doc="""inhibitory quantal conductance onto excitatory cells [nS]""")
+
     tau_e = NArray(
         label=":math:`\tau_e`",
         default=numpy.array([5.0]),
@@ -457,7 +463,7 @@ class Zerlaut_adaptation_first_order(Model):
                 E, I, Fe_ext + self.external_input_ex_ex,
                 Fi_ext + self.external_input_ex_in,
                 W_e, self.Q_e, self.tau_e, self.E_e,
-                self.Q_i, self.tau_i, self.E_i,
+                self._q_i_e(), self.tau_i, self.E_i,
                 self.g_K_e, self.g_Na_e, self.C_m, self.E_K_e, self.E_Na_e, self.N_tot,self.p_connect_e,
                 self.p_connect_i, self.g,self.K_ext_e,self.K_ext_i)
         derivative[2] = -W_e/self.tau_w_e+self.b_e*E+self.a_e*(mu_V- (self.g_Na_e*self.E_Na_e + self.g_K_e*self.E_K_e)/(self.g_Na_e+self.g_K_e))/self.tau_w_e
@@ -484,7 +490,15 @@ class Zerlaut_adaptation_first_order(Model):
         :param W: level of adaptation
         :return: result of transfer function
         """
-        return self.TF(fe, fi, fe_ext, fi_ext, W, self.P_e, self.E_K_e, self.E_Na_e, self.g_K_e, self.g_Na_e)
+        return self.TF(
+            fe, fi, fe_ext, fi_ext, W,
+            self.P_e, self.E_K_e, self.E_Na_e, self.g_K_e, self.g_Na_e,
+            self._q_i_e(),
+        )
+
+    def _q_i_e(self):
+        """Current I-to-E efficacy, optionally supplied by online homeostasis."""
+        return getattr(self, "_Q_i_e_effective", self.Q_i_e)
 
     def TF_inhibitory(self, fe, fi, fe_ext, fi_ext, W):
         """
@@ -498,7 +512,10 @@ class Zerlaut_adaptation_first_order(Model):
         """
         return self.TF(fe, fi, fe_ext, fi_ext, W, self.P_i, self.E_K_i, self.E_Na_i, self.g_K_i, self.g_Na_i)
 
-    def TF(self, fe, fi, fe_ext, fi_ext, W, P, E_K, E_Na, g_K, g_Na):
+    def TF(
+        self, fe, fi, fe_ext, fi_ext, W, P, E_K, E_Na, g_K, g_Na,
+        Q_i_target=None,
+    ):
         """
         transfer function for inhibitory population
         Inspired from the next repository :
@@ -511,8 +528,10 @@ class Zerlaut_adaptation_first_order(Model):
         :param P: Polynome of neurons phenomenological threshold (order 9)
         :return: result of transfer function
         """
+        if Q_i_target is None:
+            Q_i_target = self.Q_i
         mu_V, sigma_V, T_V = self.get_fluct_regime_vars(fe, fi, fe_ext, fi_ext, W, self.Q_e, self.tau_e, self.E_e,
-                                                           self.Q_i, self.tau_i, self.E_i,
+                                                           Q_i_target, self.tau_i, self.E_i,
                                                            g_K, g_Na, self.C_m, E_K, E_Na, self.N_tot,
                                                            self.p_connect_e,self.p_connect_i, self.g,self.K_ext_e,self.K_ext_i)
         V_thre = self.threshold_func(mu_V, sigma_V, T_V*(g_K+g_Na)/self.C_m,
@@ -865,7 +884,7 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
                 E_input_excitatory,
                 I_input_excitatory,
                 W_e, self.Q_e, self.tau_e, self.E_e,
-                self.Q_i, self.tau_i, self.E_i,
+                self._q_i_e(), self.tau_i, self.E_i,
                 self.g_K_e, self.g_Na_e, self.C_m, self.E_K_e, self.E_Na_e, self.N_tot,
                 self.p_connect_e, self.p_connect_i, self.g,self.K_ext_e,self.K_ext_i)
 

@@ -306,6 +306,15 @@ class Zerlaut_adaptation_first_order(Model):
         for the smaller driving force at rest (E_i − μV is smaller than
         E_e − μV when μV < E_i).""")
 
+    Q_i_e = NArray(
+        label="Q_i_e  [nS]",
+        default=numpy.array([5.0]),
+        domain=Range(lo=0.0, hi=20.0, step=0.1),
+        doc="""Inhibitory quantal conductance specifically onto the
+        excitatory population.  It equals Q_i by default.  Keeping it separate
+        permits inhibitory homeostasis of I-to-E feedback without changing
+        inhibitory-to-inhibitory efficacy.""")
+
     tau_e_e = NArray(
         label="tau_e_e  [ms]",
         default=numpy.array([5.0]),
@@ -605,7 +614,7 @@ class Zerlaut_adaptation_first_order(Model):
             Fi_ext + self.external_input_ex_in,
             W_e,
             self.Q_e, self.tau_e_e, self.E_e,
-            self.Q_i, self.tau_i,   self.E_i,
+            self._q_i_e(), self.tau_i, self.E_i,
             self.g_L, self.C_m, self.E_L_e,
             self.N_tot, self.p_connect_e, self.p_connect_i, self.g,
             self.K_ext_e, self.K_ext_i,
@@ -633,13 +642,20 @@ class Zerlaut_adaptation_first_order(Model):
 
     # ── Transfer functions ───────────────────────────────────────────────────
 
+    def _q_i_e(self):
+        """Current I-to-E efficacy, optionally supplied by online homeostasis."""
+        return getattr(self, "_Q_i_e_effective", self.Q_i_e)
+
     def TF_excitatory(self, fe, fi, fe_ext, fi_ext, W):
         """Transfer function for the excitatory population.
 
         Calls TF() with excitatory-specific parameters (P_e, E_L_e, tau_e_e).
         Returns the predicted excitatory firing rate in kHz.
         """
-        return self.TF(fe, fi, fe_ext, fi_ext, W, self.P_e, self.E_L_e, self.tau_e_e)
+        return self.TF(
+            fe, fi, fe_ext, fi_ext, W,
+            self.P_e, self.E_L_e, self.tau_e_e, self._q_i_e(),
+        )
 
     def TF_inhibitory(self, fe, fi, fe_ext, fi_ext, W):
         """Transfer function for the inhibitory population.
@@ -649,7 +665,7 @@ class Zerlaut_adaptation_first_order(Model):
         """
         return self.TF(fe, fi, fe_ext, fi_ext, W, self.P_i, self.E_L_i, self.tau_e_i)
 
-    def TF(self, fe, fi, fe_ext, fi_ext, W, P, E_L, tau_e):
+    def TF(self, fe, fi, fe_ext, fi_ext, W, P, E_L, tau_e, Q_i_target=None):
         """Core transfer function: inputs → output firing rate [kHz].
 
         Steps:
@@ -667,10 +683,12 @@ class Zerlaut_adaptation_first_order(Model):
         E_L         : leak reversal potential for this population [mV]
         tau_e       : excitatory synaptic decay onto this population [ms]
         """
+        if Q_i_target is None:
+            Q_i_target = self.Q_i
         mu_V, sigma_V, T_V = self.get_fluct_regime_vars(
             fe, fi, fe_ext, fi_ext, W,
             self.Q_e, tau_e, self.E_e,
-            self.Q_i, self.tau_i, self.E_i,
+            Q_i_target, self.tau_i, self.E_i,
             self.g_L, self.C_m, E_L,
             self.N_tot, self.p_connect_e, self.p_connect_i, self.g,
             self.K_ext_e, self.K_ext_i,
@@ -1056,7 +1074,7 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
         mu_V_e, _, _ = self.get_fluct_regime_vars(
             E, I, E_input_exc, I_input_exc, W_e,
             self.Q_e, self.tau_e_e, self.E_e,
-            self.Q_i, self.tau_i,   self.E_i,
+            self._q_i_e(), self.tau_i, self.E_i,
             self.g_L, self.C_m, self.E_L_e,
             self.N_tot, self.p_connect_e, self.p_connect_i, self.g,
             self.K_ext_e, self.K_ext_i,

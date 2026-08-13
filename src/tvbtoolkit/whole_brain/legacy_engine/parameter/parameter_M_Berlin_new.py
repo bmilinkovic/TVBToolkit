@@ -57,6 +57,16 @@ class Parameters:
             'E_i':-80.0,
             'Q_e':1.5, # 1.25
             'Q_i':5.0,
+            # Inhibitory quantal conductance onto excitatory cells.  Kept
+            # separate so optional homeostasis does not also alter I->I input.
+            'Q_i_e':5.0,
+            'homeostasis_target_rate':0.005,
+            'homeostasis_detector_tau_ms':50.0,
+            'homeostasis_tau_ms':2000.0,
+            'homeostasis_activation_rate':0.020,
+            'homeostasis_beta':1.0,
+            'homeostasis_min_scale':0.25,
+            'homeostasis_max_scale':4.0,
             'tau_e_e':5.0,
             'tau_e_i':5.0,
             'tau_i':5.0,

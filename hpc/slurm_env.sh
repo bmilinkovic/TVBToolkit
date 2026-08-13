@@ -75,6 +75,12 @@ resolve_tvb_dataset_root() {
   fi
 
   local candidates=(
+    "${HOME}/doc_data/converted_structural_invnodevol_native"
+    "${HOME}/data_doc_liege/raw/doc_data/converted_structural_invnodevol_native"
+    "${TVB_REPO}/data/doc_data/converted_structural_invnodevol_native"
+    "${HOME}/doc_data/converted_structural_global_max"
+    "${HOME}/data_doc_liege/raw/doc_data/converted_structural_global_max"
+    "${TVB_REPO}/data/doc_data/converted_structural_global_max"
     "${HOME}/doc_data/converted_structural"
     "${HOME}/data_doc_liege/raw/doc_data/converted_structural"
     "${TVB_REPO}/data/doc_data/converted_structural"
@@ -93,4 +99,50 @@ resolve_tvb_dataset_root() {
   echo "       Set TVB_DATASET_ROOT to the folder containing index.json, e.g.:" >&2
   echo "       export TVB_DATASET_ROOT=/home/bmilinkovic/doc_data/converted_structural" >&2
   return 7
+}
+
+require_cohort_global_max_dataset() {
+  local dataset_root="$1"
+  python - "${dataset_root}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+scheme = index.get("connectivity_normalization", {}).get("scheme")
+if scheme != "cohort_global_max":
+    raise SystemExit(
+        "ERROR: production requires connectivity_normalization.scheme="
+        f"'cohort_global_max'; found {scheme!r} in {root / 'index.json'}"
+    )
+print(f"[dataset] connectivity_normalization={scheme}")
+print(
+    "[dataset] normalization_divisor="
+    f"{index['connectivity_normalization']['divisor']}"
+)
+PY
+}
+
+require_native_invnodevol_dataset() {
+  local dataset_root="$1"
+  python - "${dataset_root}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+scheme = index.get("connectivity_normalization", {}).get("scheme")
+if scheme != "native_invnodevol":
+    raise SystemExit(
+        "ERROR: production requires connectivity_normalization.scheme="
+        f"'native_invnodevol'; found {scheme!r} in {root / 'index.json'}"
+    )
+weights = index.get("connectivity_weights", {})
+if weights.get("subject_rescaling") != "none":
+    raise SystemExit("ERROR: inverse-node-volume weights must not be subject-rescaled.")
+print("[dataset] connectivity_normalization=native_invnodevol")
+print("[dataset] subject_rescaling=none")
+PY
 }

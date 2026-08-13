@@ -5,7 +5,7 @@ This is the production version of ``run_serotonergic_pci_pilot.py``. It runs
 all available subjects with 100 perturbation trials per subject. Every dose,
 including occupancy zero, uses the same split-gK/gNa model form. Trials are
 epoched around their own recorded onset, aligned at the common midpoint, and
-reduced to one Casali PCI from the trial-averaged response.
+reduced to PCI-LZ and PCI-ST from the same trial-averaged response.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import pandas as pd
 
 import run_serotonergic_pci_pilot as pilot
 from run_serotonergic_pci_pilot import worker_initializer
+from tvbtoolkit.complexity.pci_st import PCIStResult, pci_st_from_trials
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -82,8 +83,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--transient-ms", type=float, default=4000.0)
     p.add_argument("--t-analysis-ms", type=float, default=300.0)
     p.add_argument("--trial-sim-ms", type=float, default=8000.0)
+    p.add_argument(
+        "--rate-monitor-period-ms",
+        type=float,
+        default=3.0,
+        help="Corrected PCI sampling period (default 3 ms = 333.33 Hz).",
+    )
     p.add_argument("--stim-amplitude", type=float, default=0.00030)
     p.add_argument("--stim-duration-ms", type=float, default=10.0)
+    p.add_argument(
+        "--coupling-strength",
+        type=float,
+        default=None,
+        help=(
+            "Calibrated global long-range coupling G. Required explicitly "
+            "because the legacy G=0.25 was calibrated under column-wise SC "
+            "normalization and must not be silently reused."
+        ),
+    )
     target_group = p.add_mutually_exclusive_group()
     target_group.add_argument(
         "--stim-region",
@@ -154,6 +171,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--pci-response-start-ms", type=float, default=8.0)
     p.add_argument("--pci-min-source-entropy", type=float, default=0.08)
+    p.add_argument("--pci-st-baseline-window-ms", type=float, nargs=2,
+                   default=[-300.0, -50.0], metavar=("START", "STOP"))
+    p.add_argument("--pci-st-response-window-ms", type=float, nargs=2,
+                   default=[8.0, 300.0], metavar=("START", "STOP"))
+    p.add_argument("--pci-st-k", type=float, default=1.2)
+    p.add_argument("--pci-st-min-snr", type=float, default=1.1)
+    p.add_argument("--pci-st-max-var-percent", type=float, default=99.0)
+    p.add_argument("--pci-st-n-steps", type=int, default=100)
     p.add_argument("--e-l-e-drug", type=float, default=-61.2)
     p.add_argument("--e-l-i-drug", type=float, default=-64.4)
     p.add_argument(
@@ -216,6 +241,11 @@ def _select_subjects(args: argparse.Namespace):
 
 def _validate_full_protocol(args: argparse.Namespace) -> None:
     """Fail before simulation if the approved production protocol is changed."""
+    if args.coupling_strength is None:
+        raise ValueError(
+            "--coupling-strength is required for production after changing SC "
+            "normalization. Calibrate G on a short subject subset first."
+        )
     pilot._validate_protocol_args(args)
     expected_seeds = list(range(100))
     if args.trial_seeds != expected_seeds:
@@ -242,6 +272,17 @@ def _validate_full_protocol(args: argparse.Namespace) -> None:
         )
     if str(args.scenario) != "private_alpha0":
         raise ValueError("The approved production scenario is 'private_alpha0'.")
+    if str(args.structural_connectivity_normalization) != "native_invnodevol":
+        raise ValueError(
+            "The corrected production run requires native inverse-node-volume "
+            "weights with no additional rescaling. Generate the dataset with "
+            "scripts/convert_new_doc_structural_dataset.py --sc-variant invnodevol."
+        )
+    if str(args.simulator_connectivity_normalization) != "none":
+        raise ValueError(
+            "A native inverse-node-volume dataset must not be normalized inside "
+            "the simulator."
+        )
     if not bool(args.stim_target_was_label):
         raise ValueError(
             "The production stimulation target must be supplied by anatomical "
@@ -292,6 +333,18 @@ def _validate_full_protocol(args: argparse.Namespace) -> None:
         raise ValueError(
             "The production low-activation source-entropy floor is 0.08."
         )
+    if not np.allclose(args.pci_st_baseline_window_ms, [-300.0, -50.0]):
+        raise ValueError("Production PCI-ST baseline window is [-300, -50) ms.")
+    if not np.allclose(args.pci_st_response_window_ms, [8.0, 300.0]):
+        raise ValueError("Production PCI-ST response window is [8, 300) ms.")
+    if not np.isclose(float(args.pci_st_k), 1.2):
+        raise ValueError("Production PCI-ST k is 1.2.")
+    if not np.isclose(float(args.pci_st_min_snr), 1.1):
+        raise ValueError("Production PCI-ST minimum SNR is 1.1.")
+    if not np.isclose(float(args.pci_st_max_var_percent), 99.0):
+        raise ValueError("Production PCI-ST retained variance is 99%.")
+    if int(args.pci_st_n_steps) != 100:
+        raise ValueError("Production PCI-ST threshold search uses 100 steps.")
     if not bool(args.simulate_baseline):
         raise ValueError(
             "Occupancy zero must be simulated fresh with the same split-gK/gNa "
@@ -344,9 +397,21 @@ def _run_manifest(args: argparse.Namespace, subjects: list[Any], scenario_cfg: d
         "t_analysis_ms": float(args.t_analysis_ms),
         "trial_sim_ms": float(args.trial_sim_ms),
         "integration_dt_ms": 0.1,
-        "rate_monitor_period_ms": float(pilot.RATE_MONITOR_PERIOD_MS_OLD),
+        "rate_monitor_period_ms": float(args.rate_monitor_period_ms),
+        "rate_monitor_sampling_hz": 1000.0 / float(args.rate_monitor_period_ms),
         "conduction_speed": 4.0,
-        "coupling_strength": 0.25,
+        "coupling_strength": float(args.coupling_strength),
+        "structural_connectivity_normalization": str(
+            args.structural_connectivity_normalization
+        ),
+        "structural_connectivity_normalization_divisor": (
+            None
+            if args.structural_connectivity_normalization_divisor is None
+            else float(args.structural_connectivity_normalization_divisor)
+        ),
+        "simulator_connectivity_normalization": str(
+            args.simulator_connectivity_normalization
+        ),
         "stim_amplitude": float(args.stim_amplitude),
         "stim_duration_ms": float(args.stim_duration_ms),
         "stim_variables": [0],
@@ -359,10 +424,8 @@ def _run_manifest(args: argparse.Namespace, subjects: list[Any], scenario_cfg: d
         "pci_familywise_error_scope": (
             "maximum_across_sources_separately_at_each_response_latency"
         ),
-        "pci_estimator": (
-            "one Casali PCI from the baseline-normalized, time-locked "
-            "trial-averaged response"
-        ),
+        "pci_estimators": ["PCI-LZ", "PCI-ST"],
+        "pci_estimator": "PCI-LZ and PCI-ST from the same time-locked trial average",
         "pci_permutation_replicates": int(args.pci_bootstrap_replicates),
         "pci_bootstrap_replicates": int(args.pci_bootstrap_replicates),
         "pci_alpha": float(args.pci_alpha),
@@ -373,6 +436,12 @@ def _run_manifest(args: argparse.Namespace, subjects: list[Any], scenario_cfg: d
             float(args.t_analysis_ms),
         ],
         "pci_min_source_entropy": float(args.pci_min_source_entropy),
+        "pci_st_baseline_window_ms": [float(x) for x in args.pci_st_baseline_window_ms],
+        "pci_st_response_window_ms": [float(x) for x in args.pci_st_response_window_ms],
+        "pci_st_k": float(args.pci_st_k),
+        "pci_st_min_snr": float(args.pci_st_min_snr),
+        "pci_st_max_var_percent": float(args.pci_st_max_var_percent),
+        "pci_st_n_steps": int(args.pci_st_n_steps),
         "atlas_ordering": str(args.atlas_ordering),
         "atlas_source": str(args.atlas_source),
         "atlas_labels_sha256": str(args.atlas_labels_sha256),
@@ -517,7 +586,8 @@ def _aggregate(
                     receptor_csv_sha256=args.receptor_csv_sha256,
                     expected_t_analysis_ms=args.t_analysis_ms,
                 )
-            pci_mean, pci_per_trial = pilot._compute_pci_for_condition(
+            aligned_trials, onset, dt_ms, _ = pilot._load_trials(paths)
+            pci_lz, pci_values = pilot._compute_pci_for_condition(
                 paths,
                 binarise_method=args.pci_binarise_method,
                 significance_method=args.pci_significance_method,
@@ -527,6 +597,27 @@ def _aggregate(
                 response_start_ms=args.pci_response_start_ms,
                 min_source_entropy=args.pci_min_source_entropy,
             )
+            trial_stack = np.stack(
+                [np.asarray(trial, dtype=float).T for trial in aligned_trials],
+                axis=0,
+            )
+            times_ms = (
+                np.arange(trial_stack.shape[2], dtype=float) - int(onset)
+            ) * float(dt_ms)
+            pci_st_result = pci_st_from_trials(
+                trial_stack,
+                times_ms,
+                baseline_center_trials=True,
+                baseline_window_ms=tuple(args.pci_st_baseline_window_ms),
+                response_window_ms=tuple(args.pci_st_response_window_ms),
+                k=float(args.pci_st_k),
+                min_snr=float(args.pci_st_min_snr),
+                max_var_percent=float(args.pci_st_max_var_percent),
+                n_steps=int(args.pci_st_n_steps),
+                return_details=True,
+            )
+            if not isinstance(pci_st_result, PCIStResult):
+                raise AssertionError("Detailed PCI-ST call did not return diagnostics.")
             metric_rows.append(
                 {
                     "cohort": sj.cohort,
@@ -535,14 +626,21 @@ def _aggregate(
                     "scenario": args.scenario,
                     "occupancy": float(occ),
                     "n_trials": int(len(paths)),
-                    "pci_estimator": "casali_trial_average",
-                    "pci_mean": float(pci_mean),
+                    "pci_estimator": "dual_trial_average",
+                    "pci_lz": float(pci_lz),
+                    "pci_st": float(pci_st_result.pci_st),
+                    "pci_st_n_components": int(pci_st_result.n_components),
+                    "pci_st_n_variance_components": int(
+                        pci_st_result.n_variance_components
+                    ),
+                    # Backward-compatible alias for existing PCI-LZ plotting code.
+                    "pci_mean": float(pci_lz),
                     # One condition-level PCI is computed from the averaged
                     # evoked response; this is not a per-trial uncertainty.
                     "pci_std": float("nan"),
-                    "n_returned_pci_values": int(len(pci_per_trial)),
+                    "n_returned_pci_values": int(len(pci_values)),
                     "pci_values": json.dumps(
-                        [float(value) for value in pci_per_trial]
+                        [float(value) for value in pci_values]
                     ),
                     "trial_paths": json.dumps([str(p) for p in paths]),
                 }
@@ -555,8 +653,66 @@ def _aggregate(
     tables_dir = analysis_output_root / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     metrics.to_csv(tables_dir / "serotonergic_pci_subject_metrics.csv", index=False)
-    pilot._plot(metrics, analysis_output_root)
+    _plot_dual_metrics(metrics, analysis_output_root)
     return metrics
+
+
+def _plot_dual_metrics(metrics: pd.DataFrame, output_root: Path) -> None:
+    """Plot group mean and SEM for both metrics and their baseline changes."""
+    import matplotlib.pyplot as plt
+
+    frame = metrics.copy()
+    frame["condition"] = pd.Categorical(
+        frame["condition"], categories=pilot.CONDITION_ORDER, ordered=True
+    )
+    baseline = frame.loc[
+        frame["occupancy"].eq(0.0),
+        ["cohort", "subject_id", "pci_lz", "pci_st"],
+    ].rename(columns={"pci_lz": "pci_lz_baseline", "pci_st": "pci_st_baseline"})
+    frame = frame.merge(baseline, on=["cohort", "subject_id"], how="left")
+    frame["delta_pci_lz"] = frame["pci_lz"] - frame["pci_lz_baseline"]
+    frame["delta_pci_st"] = frame["pci_st"] - frame["pci_st_baseline"]
+    frame.to_csv(
+        output_root / "tables" / "serotonergic_pci_subject_metrics_with_rescue.csv",
+        index=False,
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(8.0, 6.4), sharex=True)
+    panels = (
+        ("pci_lz", "PCI-LZ", "A"),
+        ("pci_st", "PCI-ST", "B"),
+        ("delta_pci_lz", "ΔPCI-LZ from baseline", "C"),
+        ("delta_pci_st", "ΔPCI-ST from baseline", "D"),
+    )
+    for ax, (metric, ylabel, letter) in zip(axes.flat, panels):
+        for condition in pilot.CONDITION_ORDER:
+            group = frame.loc[frame["condition"].eq(condition)]
+            summary = group.groupby("occupancy", observed=True)[metric].agg(["mean", "sem"])
+            x = summary.index.to_numpy(dtype=float)
+            y = summary["mean"].to_numpy(dtype=float)
+            sem = summary["sem"].fillna(0.0).to_numpy(dtype=float)
+            color = pilot.COND_COLORS[str(condition)]
+            ax.plot(x, y, marker="o", lw=1.8, color=color, label=str(condition))
+            ax.fill_between(x, y - sem, y + sem, color=color, alpha=0.16, linewidth=0)
+        if metric.startswith("delta_"):
+            ax.axhline(0.0, color="#222222", lw=0.8)
+        ax.set_title(f"{letter}   {ylabel}", loc="left")
+        ax.set_ylabel(ylabel)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[1, 0].set_xlabel("5-HT2A occupancy")
+    axes[1, 1].set_xlabel("5-HT2A occupancy")
+    axes[0, 1].legend(frameon=False, fontsize=8, bbox_to_anchor=(1.02, 1.0))
+    fig.tight_layout()
+    figure_dir = output_root / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    for suffix in ("png", "pdf", "svg"):
+        fig.savefig(
+            figure_dir / f"serotonergic_pci_lz_st_summary.{suffix}",
+            dpi=300 if suffix == "png" else None,
+            bbox_inches="tight",
+            facecolor="white",
+        )
+    plt.close(fig)
 
 
 def main() -> None:

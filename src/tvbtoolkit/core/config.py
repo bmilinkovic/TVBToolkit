@@ -24,6 +24,7 @@ class WholeBrainConfig:
     zerlaut_matteo: bool = False
     zerlaut_gk_gna: bool = False
     zerlaut_order: Literal[1, 2] = 2
+    online_inhibitory_homeostasis: bool = False
     stochastic_integrator: bool = True
     # Monitor selection:
     # - None: keep legacy monitor settings from parameter schema
@@ -40,6 +41,9 @@ class WholeBrainConfig:
     connectivity_zip: str | Path | None = None
     weights: np.ndarray | None = None
     tract_lengths: np.ndarray | None = None
+    # ``None`` preserves the legacy parameter-file choice. New analyses should
+    # select a mode explicitly so structural scaling is part of provenance.
+    connectivity_normalization: Literal["none", "legacy_column_sum"] | None = None
     parameter_overrides: dict = field(default_factory=dict)
 
 

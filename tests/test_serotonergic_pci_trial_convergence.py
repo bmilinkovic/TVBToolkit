@@ -64,7 +64,7 @@ def test_defaults_lock_practical_canonical_workflow() -> None:
     assert args.pci_response_start_ms == 8.0
     assert args.pci_min_source_entropy == 0.08
     assert args.pci_st_baseline_window_ms == [-300.0, -50.0]
-    assert args.pci_st_response_window_ms == [0.0, 300.0]
+    assert args.pci_st_response_window_ms == [8.0, 300.0]
 
 
 def test_subject_selection_is_deterministic_and_cohort_stratified() -> None:

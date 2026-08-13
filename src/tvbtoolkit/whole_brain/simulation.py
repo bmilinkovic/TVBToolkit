@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from tvb.basic.neotraits.api import Attr, Final
+from tvb.datatypes.equations import TemporalApplicableEquation
 from tvb.simulator import lab
 
 from tvbtoolkit.core.config import WholeBrainConfig
@@ -16,6 +18,7 @@ from tvbtoolkit.whole_brain.legacy_engine.parameter.parameter_M_Berlin_new impor
 from tvbtoolkit.whole_brain.legacy_engine.src import (
     Zerlaut,
     Zerlaut_gK_gNa,
+    Zerlaut_homeostatic,
     Zerlaut_matteo,
     Zerlaut_matteo_gK_gNa,
 )
@@ -30,6 +33,43 @@ class WholeBrainResult:
     region_labels: np.ndarray
     raw_inh: np.ndarray | None = None
     full_monitor_output: Any | None = None
+
+
+class RaisedCosinePulse(TemporalApplicableEquation):
+    """Finite raised-cosine pulse with a smooth onset and offset."""
+
+    equation = Final(
+        label="Raised-cosine pulse",
+        default=(
+            "where((var>=onset)&(var<=(onset+tau)), "
+            "0.5*amp*(1-cos(2*pi*(var-onset)/tau)), 0)"
+        ),
+    )
+    parameters = Attr(
+        field_type=dict,
+        default=lambda: {
+            "onset": 30.0,
+            "tau": 10.0,
+            "amp": 1.0,
+            "pi": np.pi,
+        },
+    )
+
+
+class GaussianPulse(TemporalApplicableEquation):
+    """Finite Gaussian pulse; ``tau`` spans six standard deviations."""
+
+    equation = Final(
+        label="Finite Gaussian pulse",
+        default=(
+            "where((var>=onset)&(var<=(onset+tau)), "
+            "amp*exp(-0.5*((var-(onset+tau/2))/(tau/6))**2), 0)"
+        ),
+    )
+    parameters = Attr(
+        field_type=dict,
+        default=lambda: {"onset": 30.0, "tau": 10.0, "amp": 1.0},
+    )
 
 
 def _apply_parameter_overrides(parameters: Parameters, overrides: dict[str, Any]) -> None:
@@ -71,11 +111,28 @@ def _apply_parameter_overrides(parameters: Parameters, overrides: dict[str, Any]
             raise KeyError(f"Unknown override key '{key}' for legacy parameter schema.")
 
 
-def _select_zerlaut_model(pm: dict):
+def _select_zerlaut_model(pm: dict, *, online_homeostasis: bool = False):
     """Match TVBSim model-selection logic for Zerlaut variants."""
     matteo = pm["matteo"]
     gk = pm["gK_gNa"]
     order = pm["order"]
+
+    if online_homeostasis:
+        if matteo or order != 2:
+            raise ValueError(
+                "Online inhibitory homeostasis currently requires the "
+                "non-Matteo second-order Zerlaut model."
+            )
+        model_cls = (
+            Zerlaut_homeostatic.Zerlaut_adaptation_second_order_gK_gNa_homeostatic
+            if gk
+            else Zerlaut_homeostatic.Zerlaut_adaptation_second_order_homeostatic
+        )
+        return model_cls(
+            variables_of_interest=(
+                "E I C_ee C_ei C_ii W_e W_i noise H_i_e R_e R_i".split()
+            )
+        )
 
     if matteo:
         if gk:
@@ -175,8 +232,18 @@ def _build_connectivity(parameters: Parameters, cfg: WholeBrainConfig):
     if pc.get("nullify_diagonals", False):
         connection.weights[np.diag_indices(len(connection.weights))] = 0.0
 
-    if pc.get("normalised", False):
-        connection.weights = connection.weights / (np.sum(connection.weights, axis=0) + 1e-12)
+    normalization = cfg.connectivity_normalization
+    if normalization is None:
+        normalization = "legacy_column_sum" if pc.get("normalised", False) else "none"
+    if normalization == "legacy_column_sum":
+        connection.weights = connection.weights / (
+            np.sum(connection.weights, axis=0) + 1e-12
+        )
+    elif normalization != "none":
+        raise ValueError(
+            "connectivity_normalization must be 'none', "
+            f"'legacy_column_sum', or None; got {normalization!r}."
+        )
 
     if pc.get("disconnect_regions", []):
         disconnect = pc["disconnect_regions"]
@@ -254,9 +321,14 @@ def _configure_zerlaut_model_parameters(
         "g_Na_i",
         "E_L_e",
         "E_L_i",
+        "Q_i_e",
+        "homeostasis_target_rate",
+        "homeostasis_activation_rate",
     }
     for key, value in parameters.parameter_model.items():
         if key in to_skip:
+            continue
+        if key.startswith("homeostasis_") and not hasattr(model, key):
             continue
         arr = np.array(value)
         if key in regionwise_keys:
@@ -315,7 +387,10 @@ def _build_integrator(parameters: Parameters, cfg: WholeBrainConfig, model, conn
             base[:, :] = float(vec[0])
         else:
             if vec.size < nvar:
-                vec = np.pad(vec, (0, nvar - vec.size), mode="edge")
+                if bool(getattr(model, "homeostasis_on", False)):
+                    vec = np.pad(vec, (0, nvar - vec.size), mode="constant")
+                else:
+                    vec = np.pad(vec, (0, nvar - vec.size), mode="edge")
             elif vec.size > nvar:
                 # Legacy parity: keep trailing entries so that the dedicated
                 # noise-state coefficient (last index) is preserved when
@@ -331,7 +406,12 @@ def _build_integrator(parameters: Parameters, cfg: WholeBrainConfig, model, conn
             arr = np.full((max(1, arr.shape[0]), max(1, arr.shape[1])), _default_nsig_value(), dtype=float)
 
         if arr.shape[0] < nvar:
-            arr = np.vstack([arr, np.repeat(arr[-1:, :], nvar - arr.shape[0], axis=0)])
+            extension = (
+                np.zeros((nvar - arr.shape[0], arr.shape[1]), dtype=float)
+                if bool(getattr(model, "homeostasis_on", False))
+                else np.repeat(arr[-1:, :], nvar - arr.shape[0], axis=0)
+            )
+            arr = np.vstack([arr, extension])
         elif arr.shape[0] > nvar:
             arr = arr[-nvar:, :]
         arr = arr[:nvar, :]
@@ -472,10 +552,25 @@ def _build_stimulation(parameter_stimulation: dict, connection, model):
     if parameter_stimulation.get("stimval", 0.0) == 0.0:
         return None
 
-    eqn_t = lab.equations.PulseTrain()
+    shape = str(parameter_stimulation.get("stimshape", "square")).lower()
+    if shape == "square":
+        eqn_t = lab.equations.PulseTrain()
+        eqn_t.parameters["T"] = np.array(parameter_stimulation["stimperiod"])
+    elif shape == "raised_cosine":
+        eqn_t = RaisedCosinePulse()
+    elif shape == "gaussian":
+        eqn_t = GaussianPulse()
+    else:
+        raise ValueError(
+            "Unsupported stimulus shape "
+            f"{shape!r}; choose square, raised_cosine, or gaussian."
+        )
     eqn_t.parameters["onset"] = np.array(parameter_stimulation["stimtime"])
     eqn_t.parameters["tau"] = np.array(parameter_stimulation["stimdur"])
-    eqn_t.parameters["T"] = np.array(parameter_stimulation["stimperiod"])
+    # Stimulus amplitude belongs in the regional weight, not in both the
+    # temporal equation and the weight.  The temporal waveform therefore has
+    # unit peak for every supported shape.
+    eqn_t.parameters["amp"] = np.array(1.0)
 
     weights = np.zeros(len(connection.weights))
     stimregion = parameter_stimulation.get("stimregion", None)
@@ -550,7 +645,10 @@ def run_whole_brain_simulation(cfg: WholeBrainConfig, seed: int = 0) -> WholeBra
         _configure_monitor_mode(parameters.parameter_monitor, cfg)
         _configure_bold_monitor(parameters.parameter_monitor, cfg)
 
-        model = _select_zerlaut_model(parameters.parameter_model)
+        model = _select_zerlaut_model(
+            parameters.parameter_model,
+            online_homeostasis=cfg.online_inhibitory_homeostasis,
+        )
 
         connection = _build_connectivity(parameters, cfg)
         connection_obj = connection
