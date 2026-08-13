@@ -10,7 +10,9 @@ import numpy as np
 from tvb.simulator import lab
 
 from tvbtoolkit.core.config import WholeBrainConfig
-from tvbtoolkit.whole_brain.legacy_engine.parameter.parameter_M_Berlin_new import Parameters
+from tvbtoolkit.whole_brain.legacy_engine.parameter.parameter_M_Berlin_new import (
+    Parameters,
+)
 from tvbtoolkit.whole_brain.legacy_engine.src import (
     Zerlaut,
     Zerlaut_gK_gNa,
@@ -454,6 +456,18 @@ def _configure_monitor_mode(parameter_monitor: dict, cfg: WholeBrainConfig) -> N
     raise ValueError(f"Unsupported monitor_mode={cfg.monitor_mode!r}")
 
 
+def _configure_bold_monitor(parameter_monitor: dict, cfg: WholeBrainConfig) -> None:
+    """Enable the optional TVB BOLD monitor declared on ``WholeBrainConfig``."""
+    if not cfg.include_bold_monitor:
+        return
+    parameter_monitor["Bold"] = True
+    parameter_monitor.setdefault("parameter_Bold", {})
+    parameter_monitor["parameter_Bold"]["variables_of_interest"] = list(
+        cfg.bold_monitor_variables
+    )
+    parameter_monitor["parameter_Bold"]["period"] = float(cfg.bold_monitor_period_ms)
+
+
 def _build_stimulation(parameter_stimulation: dict, connection, model):
     if parameter_stimulation.get("stimval", 0.0) == 0.0:
         return None
@@ -534,6 +548,7 @@ def run_whole_brain_simulation(cfg: WholeBrainConfig, seed: int = 0) -> WholeBra
         pm["gK_gNa"] = cfg.zerlaut_gk_gna
         pm["order"] = cfg.zerlaut_order
         _configure_monitor_mode(parameters.parameter_monitor, cfg)
+        _configure_bold_monitor(parameters.parameter_monitor, cfg)
 
         model = _select_zerlaut_model(parameters.parameter_model)
 

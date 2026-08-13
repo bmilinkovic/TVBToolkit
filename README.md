@@ -20,7 +20,7 @@ Recommended fresh-clone setup:
 ```bash
 git clone https://github.com/bmilinkovic/TVBToolkit.git
 cd TVBToolkit
-conda env create -f environment.yml
+SKIP_CPP=1 conda env create -f environment.yml
 conda activate tvbtoolkit
 python -m ipykernel install --user --name tvbtoolkit --display-name "Python (TVBToolkit)"
 ```
@@ -46,6 +46,14 @@ Optional neuroimaging helpers used by some downstream PHIID/visualization script
 python -m pip install -e ".[neuro]"
 ```
 
+Optional AdEx simulation-based inference uses the maintained VBI 0.4.x
+backend. Skip VBI's unrelated compiled model backends during installation:
+
+```bash
+SKIP_CPP=1 python -m pip install -e ".[inference,dev,notebooks]"
+python -c "import vbi; print(vbi.__version__)"
+```
+
 On the HPC, after transferring or cloning the repository:
 
 ```bash
@@ -65,7 +73,7 @@ git clone https://github.com/bmilinkovic/TVBToolkit.git
 cd TVBToolkit
 
 # 2) Create and activate the reproducible environment
-conda env create -f environment.yml
+SKIP_CPP=1 conda env create -f environment.yml
 conda activate tvbtoolkit
 
 # 3) Register the environment as a Jupyter kernel (one-time)
@@ -154,13 +162,37 @@ print("LZc:", lzc_multichannel(x))
 print("PCI (Casali-like):", pci_casali_like(x, stimulation_index=800, t_analysis_ms=300.0, dt_ms=1.0))
 ```
 
+### 4) AdEx parameter inference with VBI
+
+TVBToolkit can now generate matched simulated BOLD features and train
+SNPE/SNLE/SNRE posteriors for AdEx parameters. The starting prior covers
+excitatory adaptation `b_e` (the requested beta-like parameter), global
+coupling, conduction speed, and noise amplitude.
+
+```python
+from tvbtoolkit.inference import AdExPrior, BOLDFeatureConfig, BOLDFeatureExtractor
+
+prior = AdExPrior.default()
+features = BOLDFeatureExtractor(BOLDFeatureConfig(tr_seconds=2.4))
+print(prior.names)
+```
+
+The Brain Act loader applies the audited AAL90 BOLD-to-SC reordering, and state
+occupancies are computed against one fixed empirical template so labels remain
+comparable across simulations. Read
+[`docs/adex_vbi_inference.md`](docs/adex_vbi_inference.md) before launching a
+simulation campaign; a duration-matched empirical fit is an HPC-scale workload.
+The guarded walkthrough is
+[`notebooks/adex_vbi_brain_act_inference.ipynb`](notebooks/adex_vbi_brain_act_inference.ipynb).
+
 ## Notebook Workflows
 
-Two notebooks are included:
+Key notebooks include:
 
 - `notebooks/control_ketamine_psilocybin_lzc_pci.ipynb`
 - `notebooks/legacy_parity_ketamine_psilocybin_sweeps.ipynb`
 - `notebooks/brain_act_subject_loading_and_simulation.ipynb`
+- `notebooks/adex_vbi_brain_act_inference.ipynb`
 
 ### Which notebook should I run first?
 

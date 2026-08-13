@@ -264,7 +264,7 @@ def tract_length_unit_sanity(
     vmin = float(np.min(values))
     vmax = float(np.max(values))
     p99 = float(np.percentile(values, 99))
-    low, high = plausible_range_mm
+    _, high = plausible_range_mm
     is_plausible = (vmin >= 0.0) and (p99 <= high) and (vmax <= (high * 2.0))
     warning = None
     if not is_plausible:
@@ -382,9 +382,9 @@ def convert_brain_act_dataset(
         tl_dir = organized / "tract_lengths" / raw_cohort
         subject_ids = _find_subject_files(sc_dir, tl_dir)
         if not subject_ids:
-            raise FileNotFoundError(
-                f"No matched structural_connectome/tract_length pairs found for cohort {raw_cohort}"
-            )
+            # Partial exports are valid (for example CNT/MCS/UWS without COMA).
+            # Only cohorts with matched SC/TL pairs are declared in the index.
+            continue
 
         cohort_c: list[np.ndarray] = []
         cohort_l: list[np.ndarray] = []
@@ -447,6 +447,11 @@ def convert_brain_act_dataset(
             "subject_ids": subject_ids,
             "matrix_shape": [n_regions, n_regions],
         }
+
+    if not cohorts_index:
+        raise FileNotFoundError(
+            f"No matched structural_connectome/tract_length pairs found under {organized}."
+        )
 
     index = {
         "format": "tvbtoolkit.brain_act.structural_npz",

@@ -40,7 +40,7 @@ def test_butter_filtering_matches_tvbsim_reference() -> None:
     assert np.allclose(y_ref, y_new, atol=1e-12, rtol=1e-12)
 
 
-def test_corr_fc_sc_matches_tvbsim_reference() -> None:
+def test_corr_fc_sc_matches_reference_fc_and_uses_unique_edges_for_coupling() -> None:
     rng = np.random.default_rng(11)
     signal = rng.normal(size=(12, 800))  # (regions, time)
     a = rng.uniform(0.0, 1.0, size=(12, 12))
@@ -48,11 +48,13 @@ def test_corr_fc_sc_matches_tvbsim_reference() -> None:
     np.fill_diagonal(sc, 0.0)
 
     ref = _load_tvbsim_bold_namespace()
-    fc_ref, coef_ref = ref["corr_FC_SC"](signal.copy(), sc.copy())
+    fc_ref, _ = ref["corr_FC_SC"](signal.copy(), sc.copy())
     fc_new, coef_new = corr_fc_sc(signal.copy(), sc.copy())
 
     assert np.allclose(fc_ref, fc_new, atol=1e-12, rtol=1e-12)
-    assert np.isclose(coef_ref, coef_new, atol=1e-12, rtol=1e-12)
+    iu = np.triu_indices_from(sc, k=1)
+    coef_expected = np.corrcoef(np.corrcoef(signal)[iu], sc[iu])[0, 1]
+    assert np.isclose(coef_expected, coef_new, atol=1e-12, rtol=1e-12)
 
 
 def test_preprocess_bold_signal_preserves_shape() -> None:

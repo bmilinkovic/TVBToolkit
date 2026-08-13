@@ -44,3 +44,8 @@ neuro = [
   "nilearn>=0.10",
   "neuromaps>=0.0.5",
 ]
+inference = [
+  "vbi[inference]==0.4.3",
+  "sbi==0.23.2",
+  "torch>=2.3,<2.6",
+]

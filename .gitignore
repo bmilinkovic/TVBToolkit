@@ -24,6 +24,7 @@ Thumbs.db
 .cache/
 .tvb-temp/
 hpc/logs/
+sbi-logs/
 
 # Generated analysis outputs and figures
 notebooks/outputs/
@@ -40,6 +41,7 @@ tmp/
 data/
 external/
 projects/
+/share/
 
 # Public, non-sensitive toolbox reference assets.
 !/data/
