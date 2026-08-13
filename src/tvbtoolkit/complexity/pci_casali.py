@@ -446,7 +446,7 @@ def binarise_signals_casali(
     t_stim: int,
     *,
     n_bootstrap: int = 1000,
-    alpha: float = 0.01,
+    alpha: float = 0.05,
     two_sided: bool = True,
     seed: int | None = 0,
     significance_method: str = "pre_post_swap",

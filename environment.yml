@@ -14,4 +14,4 @@ dependencies:
   - ipykernel>=6
   - jupyterlab>=4
   - pip:
-      - -e .[dev,notebooks]
+      - -e .[dev,notebooks,inference]

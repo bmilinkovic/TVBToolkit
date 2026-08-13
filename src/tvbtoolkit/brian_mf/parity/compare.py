@@ -8,10 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+
 import numpy as np
 
 from tvbtoolkit.brian_mf.mean_field.mf import run_mean_field_simulation
-from tvbtoolkit.brian_mf.mean_field.tf_calc import get_neuron_params_double_cell, mu_sig_tau_func
+from tvbtoolkit.brian_mf.mean_field.tf_calc import (
+    get_neuron_params_double_cell,
+    mu_sig_tau_func,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,18 @@ def _load_module(path: Path, module_name: str):
     mod = module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def _legacy_input_rate(t, t1_exc, tau1_exc, tau2_exc, ampl_exc, plateau):
+    """Supply the helper omitted by some standalone legacy MF checkouts."""
+    heaviside = lambda value: 0.5 * (1.0 + np.sign(value))
+    return ampl_exc * (
+        np.exp(-((t - t1_exc) ** 2) / (2.0 * tau1_exc**2))
+        * heaviside(-(t - t1_exc))
+        + heaviside(-(t - (t1_exc + plateau))) * heaviside(t - t1_exc)
+        + np.exp(-((t - (t1_exc + plateau)) ** 2) / (2.0 * tau2_exc**2))
+        * heaviside(t - (t1_exc + plateau))
+    )
 
 
 def compare_subthreshold_with_legacy(
@@ -102,6 +118,10 @@ def compare_mf_with_legacy(
         raise FileNotFoundError(f"Legacy file not found: {legacy_file}")
 
     legacy = _load_module(legacy_file, "legacy_theoretical_tools")
+    if not hasattr(legacy, "input_rate"):
+        # The checked-in theoretical_tools.py calls input_rate without
+        # importing it from legacy brian_functions.py.
+        legacy.input_rate = _legacy_input_rate
 
     np.random.seed(seed)
     legacy_exc, legacy_inh = legacy.run_MF(cells, amp_stim_hz, prs, pfs, Iext=iext_hz, TotTime=total_time_s)

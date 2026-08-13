@@ -13,6 +13,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
+import statsmodels.formula.api as smf
 
 
 CONDITION_ORDER = ["COMA", "UWS", "MCS", "EMCS", "CNT"]
@@ -47,6 +49,34 @@ def sem(values: np.ndarray) -> float:
     if values.size <= 1:
         return 0.0
     return float(np.std(values, ddof=1) / np.sqrt(values.size))
+
+
+def fdr_bh(p_values: pd.Series | np.ndarray) -> np.ndarray:
+    p = np.asarray(p_values, dtype=float)
+    q = np.full_like(p, np.nan)
+    finite = np.isfinite(p)
+    p_finite = p[finite]
+    if p_finite.size == 0:
+        return q
+    order = np.argsort(p_finite)
+    ranked = p_finite[order]
+    adjusted = ranked * len(ranked) / (np.arange(len(ranked)) + 1)
+    adjusted = np.minimum.accumulate(adjusted[::-1])[::-1]
+    adjusted = np.clip(adjusted, 0.0, 1.0)
+    out = np.empty_like(p_finite)
+    out[order] = adjusted
+    q[finite] = out
+    return q
+
+
+def significance_stars(q_value: float) -> str:
+    if not np.isfinite(q_value) or q_value >= 0.05:
+        return ""
+    if q_value < 0.001:
+        return "***"
+    if q_value < 0.01:
+        return "**"
+    return "*"
 
 
 def mean_sem_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -91,7 +121,189 @@ def strip_points(ax: mpl.axes.Axes, x: float, values: np.ndarray, color: str, se
 
 
 def panel_label(ax: mpl.axes.Axes, label: str) -> None:
-    ax.text(-0.13, 1.07, label, transform=ax.transAxes, fontsize=10, fontweight="bold", va="top", ha="left")
+    ax.text(-0.13, 1.04, label, transform=ax.transAxes, fontsize=10, fontweight="bold", va="top", ha="left")
+
+
+def figure_note(df: pd.DataFrame) -> str:
+    counts = df.groupby("condition", observed=True)["subject_id"].nunique()
+    count_text = ", ".join(f"{condition} n={int(counts.get(condition, 0))}" for condition in CONDITION_ORDER)
+    if "n_trials" in df:
+        trials = sorted({int(x) for x in df["n_trials"].dropna().unique()})
+        trial_text = str(trials[0]) if len(trials) == 1 else f"{min(trials)}-{max(trials)}"
+    else:
+        trial_text = "multiple"
+    return (
+        f"Subject counts: {count_text}. Lines/shaded bands show mean +/- SEM; "
+        f"PCI per subject uses {trial_text} perturbation trials. "
+        "Panel C annotation: mixed-effects occupancy x condition test and FDR-corrected model contrasts."
+    )
+
+
+def padded_limits(values: pd.Series | np.ndarray, default: tuple[float, float], pad: float, step: float) -> tuple[float, float]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return default
+    low = min(default[0], float(np.floor((np.min(finite) - pad) / step) * step))
+    high = max(default[1], float(np.ceil((np.max(finite) + pad) / step) * step))
+    return low, high
+
+
+def max_dose_significance(max_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for condition in CONDITION_ORDER:
+        values = max_df.loc[max_df["condition"].eq(condition), "pci_rescue"].to_numpy(float)
+        values = values[np.isfinite(values)]
+        if values.size > 1 and float(np.std(values, ddof=1)) > 0.0:
+            test = stats.ttest_1samp(values, 0.0)
+            p = float(test.pvalue)
+        else:
+            p = np.nan
+        rows.append({"condition": condition, "p": p})
+    out = pd.DataFrame(rows)
+    out["q_fdr"] = fdr_bh(out["p"])
+    out["stars"] = [significance_stars(q) for q in out["q_fdr"]]
+    return out
+
+
+def annotate_max_dose_significance(ax: mpl.axes.Axes, max_df: pd.DataFrame, rescue_ylim: tuple[float, float]) -> None:
+    sig = max_dose_significance(max_df).set_index("condition")
+    y_span = rescue_ylim[1] - rescue_ylim[0]
+    offset = 0.045 * y_span
+    for xi, condition in enumerate(CONDITION_ORDER):
+        stars = str(sig.loc[condition, "stars"]) if condition in sig.index else ""
+        if not stars:
+            continue
+        vals = max_df.loc[max_df["condition"].eq(condition), "pci_rescue"].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if vals.size == 0:
+            continue
+        mean = float(np.mean(vals))
+        if mean >= 0.0:
+            y = min(float(np.max(vals)) + offset, rescue_ylim[1] - 0.055 * y_span)
+            va = "bottom"
+        else:
+            y = max(float(np.min(vals)) - offset, rescue_ylim[0] + 0.055 * y_span)
+            va = "top"
+        ax.text(
+            xi,
+            y,
+            stars,
+            ha="center",
+            va=va,
+            fontsize=8.5,
+            fontweight="bold",
+            color="#111111",
+            zorder=8,
+        )
+
+
+def subject_slopes(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    positive = df[df["occupancy"].gt(0.0)].copy()
+    for (condition, subject_id), g in positive.groupby(["condition", "subject_id"], observed=True):
+        x = g["occupancy"].to_numpy(float)
+        y = g["pci_rescue"].to_numpy(float)
+        if len(np.unique(x)) < 2:
+            continue
+        slope, intercept = np.polyfit(x, y, 1)
+        rows.append(
+            {
+                "condition": str(condition),
+                "subject_id": str(subject_id),
+                "slope_delta_pci_per_occupancy": float(slope),
+                "intercept": float(intercept),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def planned_emcs_slope_significance(df: pd.DataFrame) -> pd.DataFrame:
+    slopes = subject_slopes(df)
+    rows = []
+    emcs = slopes.loc[slopes["condition"].eq("EMCS"), "slope_delta_pci_per_occupancy"].to_numpy(float)
+    emcs = emcs[np.isfinite(emcs)]
+    for condition in [c for c in CONDITION_ORDER if c != "EMCS"]:
+        other = slopes.loc[slopes["condition"].eq(condition), "slope_delta_pci_per_occupancy"].to_numpy(float)
+        other = other[np.isfinite(other)]
+        if emcs.size > 1 and other.size > 1:
+            test = stats.ttest_ind(emcs, other, equal_var=False)
+            p = float(test.pvalue)
+        else:
+            p = np.nan
+        rows.append({"contrast": f"EMCS vs {condition}", "p": p})
+    out = pd.DataFrame(rows)
+    out["q_fdr"] = fdr_bh(out["p"])
+    out["stars"] = [significance_stars(q) for q in out["q_fdr"]]
+    return out
+
+
+def mixed_model_significance(df: pd.DataFrame) -> tuple[float, pd.DataFrame]:
+    model_df = df[df["occupancy"].gt(0.0)].copy()
+    model_df["subject_key"] = model_df["cohort"].astype(str) + ":" + model_df["subject_id"].astype(str)
+    model_df["condition"] = pd.Categorical(model_df["condition"], categories=["EMCS", "COMA", "UWS", "MCS", "CNT"])
+    full = smf.mixedlm(
+        "pci_rescue ~ occupancy * condition",
+        model_df,
+        groups=model_df["subject_key"],
+        re_formula="~occupancy",
+    ).fit(reml=False, method="lbfgs", maxiter=1000, disp=False)
+    reduced = smf.mixedlm(
+        "pci_rescue ~ occupancy + condition",
+        model_df,
+        groups=model_df["subject_key"],
+        re_formula="~occupancy",
+    ).fit(reml=False, method="lbfgs", maxiter=1000, disp=False)
+    lr = float(2.0 * (full.llf - reduced.llf))
+    df_diff = int(full.df_modelwc - reduced.df_modelwc)
+    interaction_p = float(stats.chi2.sf(lr, df_diff))
+
+    rows = []
+    for condition in ["COMA", "UWS", "MCS", "CNT"]:
+        term = f"occupancy:condition[T.{condition}]"
+        rows.append(
+            {
+                "contrast": f"EMCS slope - {condition} slope",
+                "mean_slope_diff": float(-full.params[term]),
+                "p": float(full.pvalues[term]),
+            }
+        )
+    contrasts = pd.DataFrame(rows)
+    contrasts["q_fdr"] = fdr_bh(contrasts["p"])
+    contrasts["stars"] = [significance_stars(q) for q in contrasts["q_fdr"]]
+    return interaction_p, contrasts
+
+
+def format_p(p_value: float) -> str:
+    if not np.isfinite(p_value):
+        return "p=n/a"
+    if p_value < 0.001:
+        return f"p={p_value:.1e}"
+    return f"p={p_value:.3f}"
+
+
+def annotate_mixed_model_significance(ax: mpl.axes.Axes, df: pd.DataFrame) -> None:
+    interaction_p, contrasts = mixed_model_significance(df)
+    if contrasts.empty:
+        return
+    weakest_q = float(contrasts["q_fdr"].max())
+    stars = significance_stars(weakest_q)
+    if stars:
+        text = f"LMM occupancy x condition: {format_p(interaction_p)}\nEMCS slope > each other group: {stars}"
+    else:
+        text = f"LMM occupancy x condition: {format_p(interaction_p)}\nEMCS slope > each other group: n.s."
+    ax.text(
+        0.03,
+        0.96,
+        text,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7.0,
+        color="#111111",
+        bbox={"boxstyle": "round,pad=0.24", "facecolor": "white", "edgecolor": "#CFCFCF", "linewidth": 0.6, "alpha": 0.92},
+        zorder=9,
+    )
 
 
 def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix: str) -> None:
@@ -111,13 +323,15 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
         }
     )
 
-    fig = plt.figure(figsize=(7.2, 6.1), constrained_layout=False)
-    gs = fig.add_gridspec(2, 2, left=0.08, right=0.985, bottom=0.09, top=0.93, wspace=0.32, hspace=0.42)
+    fig = plt.figure(figsize=(7.4, 6.25), constrained_layout=False)
+    gs = fig.add_gridspec(2, 2, left=0.08, right=0.965, bottom=0.105, top=0.90, wspace=0.36, hspace=0.45)
     axes = [fig.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
     ax_baseline, ax_pci, ax_rescue, ax_max = axes
 
     x_occ = np.array(sorted(df["occupancy"].unique()), dtype=float)
     x_pos = np.arange(len(CONDITION_ORDER), dtype=float)
+    pci_ylim = padded_limits(df["pci_mean"], default=(0.50, 0.96), pad=0.025, step=0.05)
+    rescue_ylim = padded_limits(df["pci_rescue"], default=(-0.09, 0.105), pad=0.012, step=0.025)
 
     baseline = df[df["occupancy"].eq(0.0)].copy()
     for xi, condition in zip(x_pos, CONDITION_ORDER, strict=True):
@@ -133,7 +347,7 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
     ax_baseline.set_xticklabels(CONDITION_ORDER, rotation=30, ha="right")
     ax_baseline.set_ylabel("PCI")
     ax_baseline.set_title("Baseline perturbational complexity")
-    ax_baseline.set_ylim(0.50, 0.96)
+    ax_baseline.set_ylim(*pci_ylim)
     ax_baseline.grid(axis="y", color="#D8D8D8", linewidth=0.6, alpha=0.65)
     panel_label(ax_baseline, "A")
 
@@ -156,7 +370,7 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
     ax_pci.set_ylabel("PCI")
     ax_pci.set_title("Dose-response of PCI")
     ax_pci.set_xlim(-0.03, 0.81)
-    ax_pci.set_ylim(0.50, 0.96)
+    ax_pci.set_ylim(*pci_ylim)
     ax_pci.set_xticks(x_occ)
     ax_pci.grid(color="#D8D8D8", linewidth=0.6, alpha=0.65)
     ax_pci.legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0)
@@ -182,9 +396,10 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
     ax_rescue.set_ylabel(r"$\Delta$PCI from baseline")
     ax_rescue.set_title("PCI rescue curve")
     ax_rescue.set_xlim(0.21, 0.81)
-    ax_rescue.set_ylim(-0.09, 0.105)
+    ax_rescue.set_ylim(*rescue_ylim)
     ax_rescue.set_xticks(x_occ[x_occ > 0.0])
     ax_rescue.grid(color="#D8D8D8", linewidth=0.6, alpha=0.65)
+    annotate_mixed_model_significance(ax_rescue, df)
     panel_label(ax_rescue, "C")
 
     max_occ = float(np.max(x_occ))
@@ -201,9 +416,9 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
     ax_max.axhline(0.0, color="#222222", linewidth=0.9)
     ax_max.set_xticks(x_pos)
     ax_max.set_xticklabels(CONDITION_ORDER, rotation=30, ha="right")
-    ax_max.set_ylabel(r"$\Delta$PCI at 0.766 occupancy")
+    ax_max.set_ylabel(rf"$\Delta$PCI at {max_occ:g} occupancy")
     ax_max.set_title("Max-dose subject effects")
-    ax_max.set_ylim(-0.09, 0.105)
+    ax_max.set_ylim(*rescue_ylim)
     ax_max.grid(axis="y", color="#D8D8D8", linewidth=0.6, alpha=0.65)
     panel_label(ax_max, "D")
 
@@ -212,18 +427,18 @@ def build_figure(df: pd.DataFrame, summary: pd.DataFrame, out_dir: Path, prefix:
         ax.spines["right"].set_visible(False)
         ax.tick_params(length=3, width=0.7)
 
-    fig.suptitle(r"Simulated 5-HT$_{2A}$ modulation of perturbational complexity", fontsize=11, y=0.985)
+    fig.suptitle(r"Simulated 5-HT$_{2A}$ modulation of perturbational complexity", fontsize=11, y=0.965)
     fig.text(
         0.08,
-        0.018,
-        "Points are subjects (n=3 per condition); lines/shaded bands show mean +/- SEM across subjects. Each subject PCI is estimated from 10 perturbation trials.",
-        fontsize=6.8,
+        0.022,
+        figure_note(df),
+        fontsize=6.6,
         color="#333333",
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for ext, dpi in [("png", 600), ("pdf", 600), ("svg", 600)]:
-        fig.savefig(out_dir / f"{prefix}.{ext}", dpi=dpi, bbox_inches="tight")
+        fig.savefig(out_dir / f"{prefix}.{ext}", dpi=dpi, bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
 
 
