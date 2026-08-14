@@ -29,6 +29,7 @@ from tvbtoolkit.workflows.brain_act_dual_domain_parallel import (
 
 
 _SEED_RE = re.compile(r"seed_(\d+)\.npz$")
+BRAIN_STATE_EXCLUDED_COHORTS = frozenset({"coma"})
 
 
 DEFAULT_SCENARIO_LABELS: dict[str, str] = {
@@ -144,7 +145,9 @@ def _compute_pooled_state_rows(
 
     jobs_by_scenario: dict[str, list[Path]] = {}
     for p in npz_paths:
-        scenario, _cohort, _subject_id, _seed = _parse_job(p, sim_dir)
+        scenario, cohort, _subject_id, _seed = _parse_job(p, sim_dir)
+        if cohort.strip().lower() in BRAIN_STATE_EXCLUDED_COHORTS:
+            continue
         jobs_by_scenario.setdefault(scenario, []).append(p)
 
     struct_cache: dict[tuple[str, str], dict[str, Any]] = {}
@@ -163,7 +166,9 @@ def _compute_pooled_state_rows(
             zero_diagonal=True,
             nonfinite="raise",
         )
-        c, l, sc_zero_frac = _apply_damage_parity(c, l, cohort)
+        c, l, sc_zero_frac = _apply_damage_parity(
+            c, l, cohort, normalize_subject_max=False
+        )
         rec = {
             "sc_vec": _upper_triangle_vector(c),
             "sc_zero_fraction_upper": float(sc_zero_frac),
@@ -180,7 +185,7 @@ def _compute_pooled_state_rows(
             "pipeline": "standard",
             "trim_edge_samples": 9,
             "pre_subsample_timeseries": True,
-            "bandpass_hz": (0.01, 0.20),
+            "bandpass_hz": (2.0, 80.0),
             "filter_order": 3,
             "n_init": 3,
             "max_iter": 60,
@@ -434,13 +439,19 @@ def _analyze_cached_job(
             zero_diagonal=True,
             nonfinite="raise",
         )
-        c, l, sc_zero_frac = _apply_damage_parity(c, l, cohort)
+        c, l, sc_zero_frac = _apply_damage_parity(
+            c, l, cohort, normalize_subject_max=False
+        )
 
         stage = str(getattr(meta, "stage", "") or "")
         sedation = str(getattr(meta, "sedation", "") or "")
         sed_group = _sedation_group(sedation)
 
-        if compute_local_states:
+        compute_subject_states = (
+            compute_local_states
+            and cohort.strip().lower() not in BRAIN_STATE_EXCLUDED_COHORTS
+        )
+        if compute_subject_states:
             met_rate = _compute_domain_metrics(
                 x_rate,
                 t_rate_ms,
@@ -451,7 +462,7 @@ def _analyze_cached_job(
                 brain_state_pipeline="standard",
                 brain_state_trim_edge_samples=9,
                 brain_state_tr_seconds=float(np.median(np.diff(t_rate_ms))) / 1000.0 if t_rate_ms.size > 1 else 0.25,
-                brain_state_bandpass_hz=(0.01, 0.20),
+                brain_state_bandpass_hz=(2.0, 80.0),
                 brain_state_n_init=10,
             )
         else:
@@ -464,7 +475,7 @@ def _analyze_cached_job(
 
         met_bold = None
         if x_bold.shape[0] >= max(10, n_states):
-            if compute_local_states:
+            if compute_subject_states:
                 bold_tr_s = float(np.median(np.diff(t_bold_ms))) / 1000.0 if t_bold_ms.size > 1 else 2.4
                 met_bold = _compute_domain_metrics(
                     x_bold,
@@ -476,7 +487,7 @@ def _analyze_cached_job(
                     brain_state_pipeline="brain_act_legacy",
                     brain_state_trim_edge_samples=0,
                     brain_state_tr_seconds=bold_tr_s,
-                    brain_state_bandpass_hz=(0.01, 0.20),
+                brain_state_bandpass_hz=(2.0, 80.0),
                     brain_state_n_init=20,
                 )
             else:
@@ -506,7 +517,7 @@ def _analyze_cached_job(
         }
 
         state_rows: list[dict[str, Any]] = []
-        if compute_local_states:
+        if compute_subject_states:
             n_state = len(met_rate["occupancy_sfc_sorted"])
             for j in range(n_state):
                 sfc_b = (
@@ -722,8 +733,13 @@ def run_cached_dual_domain_analysis(
             log_path_p,
         )
         _log_line("[cached-analysis] building legacy-pooled state rows from cached simulations...", log_path_p)
+        state_npz_paths = [
+            path for path in npz_paths
+            if _parse_job(path, sim_dir_p)[1].strip().lower()
+            not in BRAIN_STATE_EXCLUDED_COHORTS
+        ]
         state_rows = _compute_pooled_state_rows(
-            npz_paths=npz_paths,
+            npz_paths=state_npz_paths,
             sim_dir=sim_dir_p,
             dataset_root=dataset_root_p,
             n_states=int(n_states),
@@ -739,6 +755,12 @@ def run_cached_dual_domain_analysis(
 
     metrics_df = pd.DataFrame(metric_rows)
     states_df = pd.DataFrame(state_rows)
+    if not states_df.empty and "cohort" in states_df:
+        forbidden = states_df["cohort"].astype(str).str.lower().isin(
+            BRAIN_STATE_EXCLUDED_COHORTS
+        )
+        if bool(forbidden.any()):
+            raise RuntimeError("COMA rows reached brain-state output; invariant violated.")
     if not metrics_df.empty:
         metrics_df["state_mode"] = state_mode
     if not states_df.empty:

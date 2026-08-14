@@ -38,8 +38,9 @@ CONDITION_B_SCENARIOS=(
   sc_alpha_050
 )
 
-SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_hybrid/condition_b/sims"
+SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_native_invnodevol/condition_b/sims"
 DATASET_ROOT="$(resolve_tvb_dataset_root)"
+require_native_invnodevol_dataset "${DATASET_ROOT}"
 
 echo "[05] sim_root=${SIM_ROOT}"
 echo "[05] dataset_root=${DATASET_ROOT}"
@@ -47,7 +48,7 @@ echo "[05] scenarios=${#CONDITION_B_SCENARIOS[@]}"
 echo "[05] running as one exclusive single-node job; walltime is partition max"
 
 for SCENARIO in "${CONDITION_B_SCENARIOS[@]}"; do
-  OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/05_lzc_condition_b_${SCENARIO}"
+  OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/05_lzc_native_invnodevol_condition_b_${SCENARIO}"
   echo "[05] START scenario=${SCENARIO} output_dir=${OUTPUT_DIR}"
   python notebooks/05_lzc_analysis_pub.py \
     --sim-root "${SIM_ROOT}" \

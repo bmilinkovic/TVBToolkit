@@ -45,8 +45,9 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-64}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-64}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-64}"
 
-SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_hybrid/condition_b/sims"
+SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_native_invnodevol/condition_b/sims"
 DATASET_ROOT="$(resolve_tvb_dataset_root)"
+require_native_invnodevol_dataset "${DATASET_ROOT}"
 
 echo "[04] sim_root=${SIM_ROOT}"
 echo "[04] dataset_root=${DATASET_ROOT}"
@@ -54,7 +55,7 @@ echo "[04] scenarios=${#CONDITION_B_SCENARIOS[@]}"
 echo "[04] running as one exclusive single-node job; walltime is partition max"
 
 for SCENARIO in "${CONDITION_B_SCENARIOS[@]}"; do
-  OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/04_brain_states_condition_b_${SCENARIO}"
+  OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/04_brain_states_native_invnodevol_condition_b_${SCENARIO}"
   echo "[04] START scenario=${SCENARIO} output_dir=${OUTPUT_DIR}"
   python notebooks/04_brain_states_analysis_pub.py \
     --sim-root "${SIM_ROOT}" \

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=tvb02-shared
+#SBATCH --job-name=b-lzc-robust
 #SBATCH --partition=workq
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=0
-#SBATCH --time=14-00:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --output=hpc/logs/%x-%j.out
 #SBATCH --error=hpc/logs/%x-%j.err
 
@@ -14,12 +14,10 @@ mkdir -p hpc/logs
 source hpc/slurm_env.sh
 DATASET_ROOT="$(resolve_tvb_dataset_root)"
 require_native_invnodevol_dataset "${DATASET_ROOT}"
+OUTPUT_ROOT="${B_LZC_OUTPUT_ROOT:-${TVB_REPO}/notebooks/outputs/candidate_b_lzc_robustness}"
 
-echo "[02] dataset_root=${DATASET_ROOT}"
-
-python notebooks/02_full_noise_sims_rates_bold.py \
+python scripts/run_candidate_b_lzc_robustness.py \
   --dataset-root "${DATASET_ROOT}" \
-  --output-root "${TVB_REPO}/notebooks/outputs/ba_sim_native_invnodevol" \
-  --sweep-mode shared_b \
+  --output-root "${OUTPUT_ROOT}" \
   --workers "${SLURM_CPUS_PER_TASK}" \
   "$@"

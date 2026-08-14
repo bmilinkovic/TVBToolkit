@@ -13,11 +13,13 @@ set -euo pipefail
 mkdir -p hpc/logs
 source hpc/slurm_env.sh
 DATASET_ROOT="$(resolve_tvb_dataset_root)"
+require_native_invnodevol_dataset "${DATASET_ROOT}"
 
 echo "[02] dataset_root=${DATASET_ROOT}"
 
 python notebooks/02_full_noise_sims_rates_bold.py \
   --dataset-root "${DATASET_ROOT}" \
+  --output-root "${TVB_REPO}/notebooks/outputs/ba_sim_native_invnodevol" \
   --sweep-mode condition_b \
   --workers "${SLURM_CPUS_PER_TASK}" \
   "$@"

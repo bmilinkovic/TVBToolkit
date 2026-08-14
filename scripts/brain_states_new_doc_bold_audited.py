@@ -69,7 +69,9 @@ except ModuleNotFoundError:  # pragma: no cover
 from tvbtoolkit.core.paths import doc_liege_raw, doc_liege_results  # noqa: E402
 
 
-COHORTS = ("control", "emcs", "mcs", "uws", "coma")
+# COMA is excluded from every brain-state analysis. Acute COMA is clinically
+# heterogeneous and is retained only in non-state descriptive/QC workflows.
+COHORTS = ("control", "emcs", "mcs", "uws")
 PALETTE = {
     "control": "#5B7FA3",
     "emcs": "#7EA172",

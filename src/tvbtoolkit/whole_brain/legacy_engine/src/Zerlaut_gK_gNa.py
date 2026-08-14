@@ -417,8 +417,23 @@ class Zerlaut_adaptation_first_order(Model):
             shared_noise = numpy.mean(noise) * numpy.ones_like(noise)
         else:
             shared_noise = numpy.dot(shared_matrix, noise)
-        # Sqrt-weighted blend keeps injected noise variance stable across alpha.
-        return numpy.sqrt(1.0 - alpha) * noise + numpy.sqrt(alpha) * shared_noise
+        private_weight = numpy.sqrt(1.0 - alpha)
+        shared_weight = numpy.sqrt(alpha)
+        mixed = private_weight * noise + shared_weight * shared_noise
+        if shared_matrix is None:
+            n_nodes = max(int(numpy.asarray(noise).shape[0]), 1)
+            row_sq = numpy.full(n_nodes, 1.0)
+            row_diag = numpy.full(n_nodes, 1.0 / numpy.sqrt(n_nodes))
+        else:
+            matrix = numpy.asarray(shared_matrix, dtype=float)
+            row_sq = numpy.sum(matrix * matrix, axis=1)
+            row_diag = numpy.diag(matrix)
+        variance = (
+            private_weight**2
+            + shared_weight**2 * row_sq
+            + 2.0 * private_weight * shared_weight * row_diag
+        )
+        return mixed / numpy.sqrt(numpy.maximum(variance, 1e-12))[:, None]
 
     def dfun(self, state_variables, coupling, local_coupling=0.00):
         r"""

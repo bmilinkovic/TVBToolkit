@@ -37,7 +37,7 @@ python scripts/calibrate_pci_stimulus_g_homeostasis.py \
   --durations-ms 1 5 10 \
   --amplitudes-khz 0.00010 0.00020 0.00030 0.00050 \
   --g-values 0.0025 0.005 0.01 0.025 0.05 \
-  --reference-g 0.01 \
+  --reference-g 0.0025 \
   --shared-b-e 10 \
   --monitor-period-ms 3 \
   --response-start-ms 8 \
@@ -57,6 +57,7 @@ python scripts/calibrate_pci_stimulus_g_homeostasis.py \
   --pci-st-min-snr 1.1 \
   --pci-st-max-var-percent 99 \
   --pci-st-n-steps 100 \
+  --saturation-hz 120 \
   --workers "${SLURM_CPUS_PER_TASK}"
 
 echo "[pci-calibration] complete; figures are in ${OUTPUT_ROOT}/figures"

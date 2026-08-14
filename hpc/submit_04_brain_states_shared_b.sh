@@ -13,28 +13,27 @@ set -euo pipefail
 mkdir -p hpc/logs
 source hpc/slurm_env.sh
 
-B_TAG="${B_TAG:-b005}"
+B_TAG="${B_TAG:-b010}"
 SCENARIO="${SCENARIO:-private_alpha0}"
 case "${B_TAG}" in
-  b005|b015|b025) ;;
+  b[0-9][0-9][0-9]|condb_*) ;;
   *)
-    echo "ERROR: shared_b spontaneous is only complete enough for B_TAG=b005,b015,b025." >&2
-    echo "       Got B_TAG=${B_TAG}" >&2
+    echo "ERROR: invalid B_TAG=${B_TAG}" >&2
     exit 4
     ;;
 esac
 case "${SCENARIO}" in
-  private_alpha0|global_alpha_005|global_alpha_010|global_alpha_015|global_alpha_020|global_alpha_025|global_alpha_030|global_alpha_035|global_alpha_040) ;;
+  private_alpha0|global_alpha_0[0-5][0-9]|sc_alpha_0[0-5][0-9]) ;;
   *)
-    echo "ERROR: shared_b spontaneous common usable scenarios are private_alpha0 and global_alpha_005..global_alpha_040." >&2
-    echo "       Got SCENARIO=${SCENARIO}" >&2
+    echo "ERROR: invalid SCENARIO=${SCENARIO}" >&2
     exit 5
     ;;
 esac
 
-SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_hybrid/shared_b/sims"
-OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/04_brain_states_shared_b_${B_TAG}_${SCENARIO}"
+SIM_ROOT="${TVB_REPO}/notebooks/outputs/ba_sim_native_invnodevol/shared_b/sims"
+OUTPUT_DIR="${TVB_REPO}/notebooks/outputs/04_brain_states_native_invnodevol_shared_b_${B_TAG}_${SCENARIO}"
 DATASET_ROOT="$(resolve_tvb_dataset_root)"
+require_native_invnodevol_dataset "${DATASET_ROOT}"
 
 echo "[04] dataset_root=${DATASET_ROOT}"
 

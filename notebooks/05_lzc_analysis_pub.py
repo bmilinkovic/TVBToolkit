@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Publication-ready LZc (Lempel-Ziv complexity) analysis.
 
-Processes spontaneous simulation outputs from 02_ (ba_sim_hybrid), which are
+Processes corrected spontaneous simulation outputs from 02_ (native invnodevol), which are
 organised as:  sims/{b_tag}/{scenario}/{cohort}/{subject_id}/seed_*.npz
 
 Key conventions (matching 04_brain_states_analysis_pub.py)
 ----------------------------------------------------------
 * b_tag layer auto-detected (b005, b035, b125, b220, …)
 * Rate timeseries cropped to the **middle 60 s** before computing LZc
-* Rate bandpass: 2–40 Hz  (Nyquist ≈ 64 Hz @ 128 Hz monitor; 80 Hz cap
-  exceeded Nyquist and caused silent filter failures)
+* Rate bandpass: 2–80 Hz (Nyquist ≈128 Hz at nominal 256-Hz sampling)
 * BOLD bandpass: 0.01–0.20 Hz (unchanged)
 * Sedation status loaded from structural metadata for every subject
   (meta.sedation ∈ {'non_sedated', 'sedated'})
@@ -49,6 +48,10 @@ from brain_act_hybrid_common import (
 from tvbtoolkit.complexity.measures import lzc_multichannel
 from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.datasets.brain_act import load_subject_structural
+from tvbtoolkit.datasets.structural_provenance import (
+    validate_native_invnodevol_dataset,
+    validate_spontaneous_cache,
+)
 
 
 # ── Publication aesthetics (Nature guidelines) ───────────────────────────────
@@ -106,7 +109,7 @@ ANALYSIS_CONDITION_ORDER = [c for c in CONDITION_ORDER if c not in EXCLUDED_COND
 _PATIENT_CONDITIONS = [c for c in ANALYSIS_CONDITION_ORDER if c != "CNT"]
 
 RATE_CROP_MS   = 60_000.0   # crop to middle 60 s for rate
-RATE_BAND_HZ   = (2.0, 40.0)
+RATE_BAND_HZ   = (2.0, 80.0)
 BOLD_BAND_HZ   = (0.01, 0.20)
 RATE_FILT_ORD  = 4
 BOLD_FILT_ORD  = 3
@@ -116,10 +119,10 @@ BOLD_FILT_ORD  = 3
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Publication-ready LZc analysis from ba_sim_hybrid sims."
+        description="Publication-ready LZc analysis from native-invnodevol simulations."
     )
     p.add_argument("--sim-root",   type=Path,
-                   default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid", "shared_b", "sims"))
+                   default=doc_liege_results("notebooks_outputs", "ba_sim_native_invnodevol", "shared_b", "sims"))
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
     p.add_argument("--output-dir", type=Path,
                    default=doc_liege_results("notebooks_outputs", "05_lzc_analysis_pub"))
@@ -155,11 +158,11 @@ def bandpass_filter(x: np.ndarray, dt_ms: float,
 
 
 def compute_lzc_rate(rate: np.ndarray, t_ms: np.ndarray) -> float:
-    """Crop middle 60 s → z-score → bandpass (2–40 Hz) → LZc."""
+    """Crop middle 60 s → z-score → bandpass (2–80 Hz) → LZc."""
     xc, tc = crop_middle(rate, t_ms, RATE_CROP_MS)
     if xc.shape[0] < 64:
         return float("nan")
-    dt_ms = float(np.median(np.diff(tc))) if tc.size > 1 else 7.8125
+    dt_ms = float(np.median(np.diff(tc))) if tc.size > 1 else 3.9
     xz = zscore(xc, axis=0, ddof=1)
     xz = np.nan_to_num(xz)
     with warnings.catch_warnings():
@@ -194,9 +197,12 @@ def build_sedation_cache(
                 validate=False, enforce_symmetry=False,
                 zero_diagonal=False, nonfinite="ignore",
             )
-            cache[(cohort, sid)] = str(meta.sedation) if meta.sedation else "non_sedated"
-        except Exception:
-            cache[(cohort, sid)] = "non_sedated"   # safe fallback
+            cache[(cohort, sid)] = str(meta.sedation) if meta.sedation else "unknown"
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not load sedation metadata for {cohort}/{sid}; refusing "
+                "to misclassify the subject as non-sedated."
+            ) from exc
     return cache
 
 
@@ -714,6 +720,7 @@ def plot_sedation_split(
 
 def main() -> None:
     args = parse_args()
+    structural_provenance = validate_native_invnodevol_dataset(args.dataset_root)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     known_scenarios  = set(SCENARIOS.keys())
@@ -753,6 +760,17 @@ def main() -> None:
     if not all_npz:
         print("[05] ERROR: No NPZ files found. Check --sim-root and scenario names.")
         return
+    for path in all_npz:
+        validate_spontaneous_cache(
+            path,
+            expected_dataset_index_sha256=str(
+                structural_provenance["dataset_index_sha256"]
+            ),
+            validate_arrays=False,
+            expected_rate_monitor_period_ms=3.9,
+            expected_bold_monitor_period_ms=2400.0,
+        )
+    print(f"[05] validated {len(all_npz)} native-invnodevol dual-domain caches")
 
     cohort_subject_pairs: set[tuple[str, str]] = set()
     for p in all_npz:
@@ -937,6 +955,8 @@ def main() -> None:
         {
             "script":          "05_lzc_analysis_pub.py",
             "sim_root":        str(args.sim_root),
+            "dataset_root":    str(args.dataset_root),
+            "structural_provenance": structural_provenance,
             "b_tags":          processed_b_tags,
             "scenarios":       scenarios,
             "excluded_conditions": sorted(EXCLUDED_CONDITIONS),

@@ -27,7 +27,7 @@ from tvbtoolkit.core.paths import doc_liege_raw
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 os.environ.setdefault("TVB_USER_HOME", str(PROJECT_ROOT / ".tvb-temp"))
 
-DATASET_ROOT = doc_liege_raw("doc_data", "converted_structural")
+DATASET_ROOT = doc_liege_raw("doc_data", "converted_structural_invnodevol_native")
 
 COHORT_TO_CONDITION = {
     "control": "CNT",
@@ -135,6 +135,13 @@ BASE_PARAMETER_MODEL_NEW: dict[str, Any] = {
 # Keep old monitor sampling.
 RATE_MONITOR_HZ_OLD = 128.0
 RATE_MONITOR_PERIOD_MS_OLD = 1000.0 / RATE_MONITOR_HZ_OLD
+
+# Production spontaneous rate sampling. With dt=0.1 ms, the nearest valid
+# integer-step monitor period to nominal 256 Hz is 39 steps = 3.9 ms
+# (256.410 Hz effective; Nyquist 128.205 Hz).
+RATE_MONITOR_HZ_SPONTANEOUS_NOMINAL = 256.0
+RATE_MONITOR_PERIOD_MS_SPONTANEOUS = 3.9
+RATE_MONITOR_HZ_SPONTANEOUS_EFFECTIVE = 1000.0 / RATE_MONITOR_PERIOD_MS_SPONTANEOUS
 
 
 @dataclass(frozen=True)

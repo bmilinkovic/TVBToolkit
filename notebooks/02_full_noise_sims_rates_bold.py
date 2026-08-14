@@ -13,13 +13,17 @@ from brain_act_hybrid_common import (
     BASE_PARAMETER_MODEL_NEW,
     DATASET_ROOT,
     PROJECT_ROOT,
-    RATE_MONITOR_PERIOD_MS_OLD,
+    RATE_MONITOR_PERIOD_MS_SPONTANEOUS,
     SCENARIOS,
     get_subject_jobs,
     save_json,
 )
 
 from tvbtoolkit.core.paths import doc_liege_results
+from tvbtoolkit.datasets.structural_provenance import (
+    validate_native_invnodevol_dataset,
+    validate_spontaneous_cache,
+)
 from tvbtoolkit.workflows.brain_act_dual_domain_parallel import (
     run_simulation_only_job,
     worker_initializer,
@@ -32,7 +36,7 @@ DEFAULT_SCENARIO_KEYS = (
     *(f"global_alpha_{a:03d}" for a in ALPHA_SWEEP_PCT),
     *(f"sc_alpha_{a:03d}" for a in ALPHA_SWEEP_PCT),
 )
-DEFAULT_B_VALUES = (5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0, 75.0)
+DEFAULT_B_VALUES = (10.0,)
 EXCLUDED_CONDITIONS: set[str] = set()
 CONDITION_B_GRADIENTS: dict[str, dict[str, float]] = {
     "doc_gradient": {
@@ -89,14 +93,18 @@ def parse_args() -> argparse.Namespace:
         )
     )
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
-    p.add_argument("--output-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid"))
+    p.add_argument(
+        "--output-root",
+        type=Path,
+        default=doc_liege_results("notebooks_outputs", "ba_sim_native_invnodevol"),
+    )
     p.add_argument("--workers", type=int, default=max(1, int(round((os.cpu_count() or 8) * 0.8))))
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="Build manifests and report queued jobs without launching simulations.")
     p.add_argument("--scenario", action="append", dest="scenarios", default=None)
     p.add_argument("--b-values", type=float, nargs="+", default=list(DEFAULT_B_VALUES))
-    p.add_argument("--sweep-mode", choices=("both", "shared_b", "condition_b"), default="both",
+    p.add_argument("--sweep-mode", choices=("both", "shared_b", "condition_b"), default="shared_b",
                    help="Run shared-b grid, condition-specific b gradients, or both.")
     p.add_argument("--condition-b-gradient", action="append", dest="condition_b_gradients", default=None,
                    choices=tuple(CONDITION_B_GRADIENTS.keys()),
@@ -104,7 +112,15 @@ def parse_args() -> argparse.Namespace:
                         "defaults to all gradients.")
 
     p.add_argument("--seed-spontaneous", type=int, default=0)
-    p.add_argument("--transient-ms", type=float, default=4000.0)
+    p.add_argument(
+        "--transient-ms",
+        type=float,
+        default=20_000.0,
+        help=(
+            "Warm-up discarded from both domains. The 20-s default allows the "
+            "TVB Balloon-Windkessel BOLD state to settle before retained data."
+        ),
+    )
     p.add_argument("--bold-target-minutes", type=float, default=4.0)
     p.add_argument("--bold-target-points", type=int, default=None)
     p.add_argument("--bold-tr-s", type=float, default=2.4)
@@ -151,6 +167,7 @@ def write_manifest(
     branch_sims_root: Path,
     total_parameter_combinations: int,
     subject_jobs_all_total: int,
+    structural_provenance: dict[str, Any],
 ) -> None:
     manifest = {
         "script": "02_full_noise_sims_rates_bold.py",
@@ -164,13 +181,18 @@ def write_manifest(
             "alpha=0 is simulated once as private_alpha0; global/sc-informed "
             "shared-noise sweeps start at alpha=0.05 to avoid duplicate no-shared-noise runs."
         ),
+        "shared_noise_variance_policy": (
+            "Private/shared OU components are square-root mixed and row-wise "
+            "variance normalized; alpha changes spatial correlation without "
+            "systematically changing marginal noise variance."
+        ),
         "b_values": [float(x) for x in b_values],
         "condition_b_gradients": condition_b_gradients,
         "subjects_total": int(subject_jobs_total),
         "subjects_total_before_exclusions": int(subject_jobs_all_total),
         "excluded_conditions": sorted(EXCLUDED_CONDITIONS),
         "base_parameter_model_new": BASE_PARAMETER_MODEL_NEW,
-        "rate_monitor_period_ms_old": float(rate_monitor_period_ms),
+        "rate_monitor_period_ms": float(rate_monitor_period_ms),
         "transient_ms": float(args.transient_ms),
         "bold_target_minutes_requested": float(args.bold_target_minutes) if args.bold_target_minutes is not None else None,
         "bold_target_points": int(bold_target_points),
@@ -178,6 +200,23 @@ def write_manifest(
         "bold_tr_s": float(args.bold_tr_s),
         "spontaneous_sim_ms": float(spontaneous_sim_ms),
         "seed_spontaneous": int(args.seed_spontaneous),
+        "structural_provenance": structural_provenance,
+        "connectivity_processing": {
+            "subject_rescaling": "none",
+            "simulator_normalization": "none",
+            "zero_diagonal": True,
+            "patient_damage_mask": "tract lengths set to zero wherever connectivity is zero",
+        },
+        "monitor_protocol": {
+            "rate_monitor": "TVB TemporalAverage of E and I",
+            "rate_sampling_hz_nominal": 256.0,
+            "rate_sampling_hz_effective": 1000.0 / float(rate_monitor_period_ms),
+            "rate_monitor_period_ms": float(rate_monitor_period_ms),
+            "rate_monitor_quantization": "39 integration steps at dt=0.1 ms",
+            "bold_monitor": "TVB built-in Balloon-Windkessel Bold monitor of E",
+            "bold_tr_s": float(args.bold_tr_s),
+            "transient_discard_ms": float(args.transient_ms),
+        },
         "total_noise_scenarios": len(scenarios),
         "total_parameter_combinations": int(total_parameter_combinations),
         "total_simulations_theoretical": int(total_parameter_combinations) * int(subject_jobs_total),
@@ -257,6 +296,10 @@ def run_pool(jobs: list[dict[str, Any]], workers: int) -> list[dict[str, Any]]:
 
 def main() -> None:
     args = parse_args()
+    structural_provenance = validate_native_invnodevol_dataset(args.dataset_root)
+    print("[02] connectivity_normalization=native_invnodevol")
+    print("[02] simulator_connectivity_normalization=none")
+    print("[02] subject_rescaling=none")
 
     scenarios = choose_scenarios(args.scenarios)
     b_values = _normalise_b_values(list(args.b_values))
@@ -279,7 +322,7 @@ def main() -> None:
         bold_tr_s=float(args.bold_tr_s),
     )
     spontaneous_sim_ms = float(args.transient_ms) + float(bold_target_points) * bold_period_ms
-    rate_monitor_period_ms = float(RATE_MONITOR_PERIOD_MS_OLD)
+    rate_monitor_period_ms = float(RATE_MONITOR_PERIOD_MS_SPONTANEOUS)
 
     output_root = args.output_root
 
@@ -323,6 +366,7 @@ def main() -> None:
             branch_sims_root=sims_root,
             total_parameter_combinations=int(branch["parameter_combinations"]),
             subject_jobs_all_total=len(subject_jobs_all),
+            structural_provenance=structural_provenance,
         )
         write_parameter_plan_csv(
             branch_root / "parameter_plan.csv",
@@ -342,7 +386,18 @@ def main() -> None:
                         out_dir = sims_root / btag / scenario_key / sj.cohort / sj.subject_id
                         npz_path = out_dir / f"seed_{int(args.seed_spontaneous):03d}.npz"
                         if npz_path.exists() and not args.overwrite:
-                            continue
+                            try:
+                                validate_spontaneous_cache(
+                                    npz_path,
+                                    expected_dataset_index_sha256=str(
+                                        structural_provenance["dataset_index_sha256"]
+                                    ),
+                                    expected_rate_monitor_period_ms=float(rate_monitor_period_ms),
+                                    expected_bold_monitor_period_ms=float(bold_period_ms),
+                                )
+                                continue
+                            except ValueError as exc:
+                                print(f"[02] stale cache will be replaced: {exc}")
                         base_model = deepcopy(BASE_PARAMETER_MODEL_NEW)
                         base_model["b_e"] = float(b_val)
                         jobs.append(
@@ -361,6 +416,11 @@ def main() -> None:
                                 "base_parameter_model": base_model,
                                 "enable_bold": True,
                                 "bold_period_ms": float(bold_period_ms),
+                                "dataset_index_sha256": str(
+                                    structural_provenance["dataset_index_sha256"]
+                                ),
+                                "structural_connectivity_normalization": "native_invnodevol",
+                                "simulator_connectivity_normalization": "none",
                             }
                         )
         else:
@@ -376,7 +436,18 @@ def main() -> None:
                         out_dir = sims_root / btag / scenario_key / sj.cohort / sj.subject_id
                         npz_path = out_dir / f"seed_{int(args.seed_spontaneous):03d}.npz"
                         if npz_path.exists() and not args.overwrite:
-                            continue
+                            try:
+                                validate_spontaneous_cache(
+                                    npz_path,
+                                    expected_dataset_index_sha256=str(
+                                        structural_provenance["dataset_index_sha256"]
+                                    ),
+                                    expected_rate_monitor_period_ms=float(rate_monitor_period_ms),
+                                    expected_bold_monitor_period_ms=float(bold_period_ms),
+                                )
+                                continue
+                            except ValueError as exc:
+                                print(f"[02] stale cache will be replaced: {exc}")
                         base_model = deepcopy(BASE_PARAMETER_MODEL_NEW)
                         base_model["b_e"] = b_val
                         jobs.append(
@@ -395,6 +466,11 @@ def main() -> None:
                                 "base_parameter_model": base_model,
                                 "enable_bold": True,
                                 "bold_period_ms": float(bold_period_ms),
+                                "dataset_index_sha256": str(
+                                    structural_provenance["dataset_index_sha256"]
+                                ),
+                                "structural_connectivity_normalization": "native_invnodevol",
+                                "simulator_connectivity_normalization": "none",
                             }
                         )
 

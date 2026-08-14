@@ -81,6 +81,10 @@ from brain_act_hybrid_common import (
 from tvbtoolkit.analysis.brain_states import phase_patterns
 from tvbtoolkit.core.paths import doc_liege_results
 from tvbtoolkit.datasets.brain_act import load_subject_structural
+from tvbtoolkit.datasets.structural_provenance import (
+    validate_native_invnodevol_dataset,
+    validate_spontaneous_cache,
+)
 
 
 EXCLUDED_CONDITIONS = {"COMA"}
@@ -115,10 +119,10 @@ DOMAIN_CONFIGS = [
         pipeline="firing_rate",
         trim_edge_samples=9,
         # Do NOT pre-subsample before pattern extraction: the rate monitor runs
-        # at ~128 Hz (dt ≈ 7.8 ms, Nyquist ≈ 64 Hz).  Downsampling to a handful
+        # at nominal 256 Hz (3.9 ms effective, Nyquist ≈128 Hz). Downsampling
         # of rows would collapse the sample rate far below the bandpass lower
         # edge (2 Hz) and crash scipy's butter().  Instead we let extract_patterns
-        # filter the full cropped timeseries (~7 680 samples) and subsample the
+        # filter the full cropped timeseries (~15 360 samples) and subsample the
         # resulting phase patterns afterwards via max_rows_per_job.
         pre_subsample_timeseries=False,
         # Rate domain: 1 200 patterns/subject — the largest round value that
@@ -129,17 +133,15 @@ DOMAIN_CONFIGS = [
         #   (1) Stays on deterministic Lloyd KMeans, matching v1's algorithm.
         #   (2) 24× more training data than v1 (50) → more stable centroids
         #       and better local-minimum coverage with n_init=10 restarts.
-        #   (3) At 50 ms spacing per pattern vs the ~13 ms autocorrelation
-        #       timescale of the 2–40 Hz bandpass, samples are still ~4×
-        #       decorrelated — k-means' independence assumption is satisfied.
+        #   (3) At 50 ms spacing per pattern vs the ~6 ms autocorrelation
+        #       timescale of the 2–80 Hz bandpass, samples remain separated.
         # If this drifts from the v1 figures, fall back to 50 rows.
         max_rows_per_job=1_200,
-        # Upper limit must be strictly below Nyquist (≈ 64 Hz).  40 Hz captures
-        # delta → low-gamma dynamics relevant for rate-based brain states.
-        bandpass_hz=(2.0, 40.0),
+        # 80 Hz includes high-gamma dynamics and remains below the 128-Hz Nyquist.
+        bandpass_hz=(2.0, 80.0),
         filter_order=4,
         # Crop to middle 60 s: avoids start/end transient edge effects and
-        # keeps RAM/compute manageable (~7 680 timepoints instead of ~30 720
+        # keeps RAM/compute manageable (~15 360 timepoints instead of ~61 440
         # for the full 4-minute post-transient window).
         crop_middle_ms=60_000.0,
         # No k-means overrides → rate uses the CLI defaults, which match the
@@ -182,7 +184,7 @@ def parse_args() -> argparse.Namespace:
             "regime and compare centroids via Hungarian assignment."
         )
     )
-    p.add_argument("--sim-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_hybrid", "shared_b", "sims"))
+    p.add_argument("--sim-root", type=Path, default=doc_liege_results("notebooks_outputs", "ba_sim_native_invnodevol", "shared_b", "sims"))
     p.add_argument("--dataset-root", type=Path, default=DATASET_ROOT)
     p.add_argument("--output-dir", type=Path, default=doc_liege_results("notebooks_outputs", "04_brain_states_analysis_pub_v5"))
     p.add_argument("--n-states", type=int, default=5)
@@ -285,9 +287,6 @@ def apply_damage_parity(connectivity: np.ndarray, tract_lengths: np.ndarray, coh
         mismatch = (c == 0.0) & (l != 0.0)
         if np.any(mismatch):
             l[mismatch] = 0.0
-    cmax = float(np.max(c))
-    if cmax > 0.0:
-        c /= cmax
     return c, l
 
 
@@ -654,6 +653,7 @@ def _plot_centroid_diag_grid(
 
 def main() -> None:
     args = parse_args()
+    structural_provenance = validate_native_invnodevol_dataset(args.dataset_root)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     order_modes = (
         ["reference_sc", "native"]
@@ -705,6 +705,17 @@ def main() -> None:
     if not all_npz:
         print(f"[04] ERROR: No NPZ files found.")
         return
+    for path in all_npz:
+        validate_spontaneous_cache(
+            path,
+            expected_dataset_index_sha256=str(
+                structural_provenance["dataset_index_sha256"]
+            ),
+            validate_arrays=False,
+            expected_rate_monitor_period_ms=3.9,
+            expected_bold_monitor_period_ms=2400.0,
+        )
+    print(f"[04] validated {len(all_npz)} native-invnodevol dual-domain caches")
 
     cohort_subject_pairs: set[tuple[str, str]] = set()
     for p in all_npz:
@@ -715,6 +726,8 @@ def main() -> None:
         if cond is None or cond in EXCLUDED_CONDITIONS:
             continue
         cohort_subject_pairs.add((cohort, parts[-2]))
+    if any(cohort.lower() == "coma" for cohort, _ in cohort_subject_pairs):
+        raise RuntimeError("COMA must never enter the brain-state analysis cohort.")
     sc_cache = load_sc_cache(args.dataset_root, cohort_subject_pairs)
 
     # ── Run one completely independent analysis per b_tag ─────────────────────
@@ -915,6 +928,15 @@ def main() -> None:
                     t_full = np.asarray(d_full[cfg.t_key], dtype=float)
                     if x_full.ndim != 2 or x_full.shape[0] < max(10, int(args.n_states)):
                         continue
+                    # Assign occupancy over the same analysis window used to
+                    # fit the centroids. Otherwise rate centroids are learned
+                    # from the middle 60 s but scored over the full four min.
+                    if cfg.crop_middle_ms is not None:
+                        x_full, t_full = crop_middle(
+                            x_full, t_full, cfg.crop_middle_ms
+                        )
+                        if x_full.shape[0] < max(10, int(args.n_states)):
+                            continue
                     try:
                         pats_full = extract_patterns(x_full, t_full, cfg)
                     except Exception:
@@ -964,6 +986,8 @@ def main() -> None:
             out_dir = args.output_dir / order_mode_dirs[mode] / b_tag
             out_dir.mkdir(parents=True, exist_ok=True)
             state_rows = state_rows_by_mode[mode]
+            if any(str(row.get("cohort", "")).lower() == "coma" for row in state_rows):
+                raise RuntimeError("COMA reached brain-state output; invariant violated.")
             write_csv(out_dir / "brain_states_subject_state_rows.csv", state_rows)
             all_records_by_mode[mode].extend(state_rows)
             if state_rows:
@@ -1029,6 +1053,7 @@ def main() -> None:
             "script": "04_brain_states_analysis_pub.py",
             "sim_root": str(args.sim_root),
             "dataset_root": str(args.dataset_root),
+            "structural_provenance": structural_provenance,
             "b_tags": [sr.name for sr in sim_roots],
             "scenarios": scenarios,
             "excluded_conditions": sorted(EXCLUDED_CONDITIONS),

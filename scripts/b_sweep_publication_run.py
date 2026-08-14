@@ -258,8 +258,8 @@ def _patched_zerlaut_with_ou(ou_trace_hz: np.ndarray):
     """Temporarily monkey-patch ``_select_zerlaut_model`` to inject OU drive."""
     original = _wb_sim_module._select_zerlaut_model
 
-    def patched(pm):
-        model = original(pm)
+    def patched(pm, **kwargs):
+        model = original(pm, **kwargs)
         _attach_ou_drive(model, ou_trace_hz)
         return model
 

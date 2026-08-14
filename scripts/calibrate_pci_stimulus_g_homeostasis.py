@@ -127,7 +127,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pci-st-min-snr", type=float, default=1.1)
     p.add_argument("--pci-st-max-var-percent", type=float, default=99.0)
     p.add_argument("--pci-st-n-steps", type=int, default=100)
-    p.add_argument("--saturation-hz", type=float, default=100.0)
+    p.add_argument("--saturation-hz", type=float, default=120.0)
     p.add_argument("--stim-region-label", default=pilot.DEFAULT_STIM_REGION_LABEL)
     p.add_argument(
         "--receptor-tracer", choices=["cimbi", "savli", "talbot"], default="cimbi"

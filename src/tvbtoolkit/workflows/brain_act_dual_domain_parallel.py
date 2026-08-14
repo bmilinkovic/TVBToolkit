@@ -76,7 +76,7 @@ def _apply_damage_parity(
     l: np.ndarray,
     cohort: str,
     *,
-    normalize_subject_max: bool = True,
+    normalize_subject_max: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Apply damage masking and, for legacy runs, subject-max scaling.
 
@@ -86,9 +86,9 @@ def _apply_damage_parity(
          (damaged/absent connections cannot carry signal).
       3. Optionally max-normalise surviving weights for legacy reproduction.
 
-    New cohort-global-normalized datasets must pass
-    ``normalize_subject_max=False`` so their shared between-subject scale is
-    not erased.
+    Native inverse-node-volume and cohort-global datasets use the default
+    ``False`` so their between-subject scale is not erased.  Historical
+    reproduction code must request ``True`` explicitly.
     """
     c = np.asarray(c, dtype=float).copy()
     l = np.asarray(l, dtype=float).copy()
@@ -243,7 +243,9 @@ def run_dual_domain_job(
         zero_diagonal=True,
         nonfinite="raise",
     )
-    c, l, sc_zero_frac = _apply_damage_parity(c, l, cohort)
+    c, l, sc_zero_frac = _apply_damage_parity(
+        c, l, cohort, normalize_subject_max=False
+    )
 
     stage = str(getattr(meta, "stage", "") or "")
     sedation = str(getattr(meta, "sedation", "") or "")
@@ -282,6 +284,7 @@ def run_dual_domain_job(
         monitor_variables=(0, 1),
         weights=np.asarray(c, dtype=float),
         tract_lengths=np.asarray(l, dtype=float),
+        connectivity_normalization="none",
         parameter_overrides=overrides,
     )
 
@@ -326,7 +329,7 @@ def run_dual_domain_job(
         brain_state_pipeline="standard",
         brain_state_trim_edge_samples=9,
         brain_state_tr_seconds=max(rate_dt_s, 1e-6),
-        brain_state_bandpass_hz=(0.01, 0.20),
+        brain_state_bandpass_hz=(2.0, 80.0),
         brain_state_n_init=10,
     )
 
@@ -417,6 +420,9 @@ def run_simulation_only_job(
     base_parameter_model: dict[str, Any],
     enable_bold: bool = False,
     bold_period_ms: float = 2400.0,
+    dataset_index_sha256: str = "",
+    structural_connectivity_normalization: str = "native_invnodevol",
+    simulator_connectivity_normalization: str = "none",
 ) -> dict[str, Any]:
     """Run one spontaneous whole-brain simulation and save NPZ.
 
@@ -478,7 +484,17 @@ def run_simulation_only_job(
         zero_diagonal=True,
         nonfinite="raise",
     )
-    c, l, sc_zero_frac = _apply_damage_parity(c, l, cohort)
+    if structural_connectivity_normalization != "native_invnodevol":
+        raise ValueError(
+            "Production spontaneous simulations require native_invnodevol weights."
+        )
+    if simulator_connectivity_normalization != "none":
+        raise ValueError(
+            "Native inverse-node-volume weights must enter TVB without normalization."
+        )
+    c, l, sc_zero_frac = _apply_damage_parity(
+        c, l, cohort, normalize_subject_max=False
+    )
 
     stage = str(getattr(meta, "stage", "") or "")
     sedation = str(getattr(meta, "sedation", "") or "")
@@ -510,6 +526,7 @@ def run_simulation_only_job(
         monitor_variables=(0, 1),
         weights=np.asarray(c, dtype=float),
         tract_lengths=np.asarray(l, dtype=float),
+        connectivity_normalization="none",
         parameter_overrides=overrides,
     )
 
@@ -541,12 +558,26 @@ def run_simulation_only_job(
         transient_ms=np.array([float(transient_ms)]),
         rate_monitor_period_ms=np.array([float(rate_monitor_period_ms)]),
         noise_alpha=np.array([float(noise_alpha)]),
+        shared_noise_mode=np.array([str(shared_noise_mode)]),
+        b_e_pa=np.array([float(parameter_model["b_e"])]),
+        coupling_strength=np.array([0.25]),
+        conduction_speed_m_per_s=np.array([4.0]),
+        dt_ms=np.array([0.1]),
+        dataset_index_sha256=np.array([str(dataset_index_sha256)]),
+        structural_connectivity_normalization=np.array(
+            [str(structural_connectivity_normalization)]
+        ),
+        simulator_connectivity_normalization=np.array(
+            [str(simulator_connectivity_normalization)]
+        ),
+        subject_rescaling=np.array(["none"]),
         seed=np.array([int(seed)]),
     )
     if enable_bold and t_bold_ms.size:
         keep_bold = t_bold_ms >= float(transient_ms)
         save_dict["time_bold_ms"] = t_bold_ms[keep_bold]
         save_dict["bold"] = x_bold[keep_bold]
+        save_dict["bold_monitor_period_ms"] = np.array([float(bold_period_ms)])
 
     np.savez_compressed(save_path, **save_dict)
 
@@ -698,7 +729,9 @@ def run_pci_trial_job(
         zero_diagonal=True,
         nonfinite="raise",
     )
-    c, l, _sc_zero_frac = _apply_damage_parity(c, l, cohort)
+    c, l, _sc_zero_frac = _apply_damage_parity(
+        c, l, cohort, normalize_subject_max=False
+    )
 
     parameter_model = deepcopy(base_parameter_model)
     parameter_model.update(
@@ -733,6 +766,7 @@ def run_pci_trial_job(
         monitor_variables=(0, 1),
         weights=np.asarray(c, dtype=float),
         tract_lengths=np.asarray(l, dtype=float),
+        connectivity_normalization="none",
         parameter_overrides={
             "parameter_model":    parameter_model,
             "parameter_stimulus": parameter_stimulus,

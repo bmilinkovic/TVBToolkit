@@ -276,15 +276,21 @@ def _configure_shared_noise(
     if shared_noise_mode in ("none", "private"):
         shared_noise_matrix = np.eye(n_nodes, dtype=float)
     elif shared_noise_mode == "global":
-        shared_noise_matrix = np.full((n_nodes, n_nodes), 1.0 / max(n_nodes, 1), dtype=float)
+        # Unit-L2 rows make the common component have the same marginal
+        # variance as one private process (mean() would shrink it by 1/N).
+        shared_noise_matrix = np.full(
+            (n_nodes, n_nodes), 1.0 / np.sqrt(max(n_nodes, 1)), dtype=float
+        )
     elif shared_noise_mode in ("connectivity", "sc", "weights"):
         weights_nonneg = np.array(connection.weights, dtype=float)
         weights_nonneg = np.maximum(weights_nonneg, 0.0)
         np.fill_diagonal(weights_nonneg, 0.0)
-        row_sum = weights_nonneg.sum(axis=1, keepdims=True)
+        row_norm = np.linalg.norm(weights_nonneg, axis=1, keepdims=True)
         shared_noise_matrix = np.zeros_like(weights_nonneg)
-        non_zero_rows = row_sum[:, 0] > 0.0
-        shared_noise_matrix[non_zero_rows] = weights_nonneg[non_zero_rows] / row_sum[non_zero_rows]
+        non_zero_rows = row_norm[:, 0] > 0.0
+        shared_noise_matrix[non_zero_rows] = (
+            weights_nonneg[non_zero_rows] / row_norm[non_zero_rows]
+        )
         zero_rows = np.where(~non_zero_rows)[0]
         shared_noise_matrix[zero_rows, zero_rows] = 1.0
         if mapping is not None:
