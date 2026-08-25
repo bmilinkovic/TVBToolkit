@@ -33,9 +33,10 @@ adopted by Casali et al. (2010):
 
 The result is one binary source-by-time matrix for the trial-averaged evoked
 response. Lempel-Ziv complexity is calculated on the 8--300 ms portion and
-normalized by the binary matrix's source entropy. As in empirical PCI work,
-PCI is set to zero when source entropy is at or below 0.08, because a
-vanishingly sparse matrix gives an unstable normalization.
+normalized by the binary matrix's source entropy. In simulations, response
+entropy and active fraction are saved as diagnostics but do not overwrite the
+calculated PCI. The former 0.08 forced-zero rule was removed because it erased
+otherwise useful graded differences in sparse simulated responses.
 
 On the saved simulations' 7.8125-ms sampling grid, requested time boundaries
 usually do not land exactly on samples. The analysis therefore records both
@@ -76,7 +77,7 @@ Python equations.
    to zero, and the remaining component contributions are summed.
 
 PCI-ST does not use the Casali permutation significance matrix, Lempel-Ziv
-compression, or the 0.08 source-entropy rule. It is nonnegative but is **not
+compression, or any source-entropy cutoff. It is nonnegative but is **not
 bounded between zero and one**. Therefore, its numbers cannot be compared
 with the original PCI scale or with the clinical PCI cutoff of 0.31.
 

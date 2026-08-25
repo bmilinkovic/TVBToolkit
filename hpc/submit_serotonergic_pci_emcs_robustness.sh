@@ -60,7 +60,6 @@ python scripts/run_serotonergic_pci_emcs_robustness.py \
   --pci-alpha 0.05 \
   --pci-permutation-seed 0 \
   --pci-response-start-ms 8 \
-  --pci-min-source-entropy 0.08 \
   --e-l-e-drug -61.2 \
   --e-l-i-drug -64.4 \
   --variation-fraction 0.20

@@ -1011,31 +1011,31 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
         df = 1e-7
 
         def _dF_dE(TF, fe, fi, fe_ext, fi_ext, W):
-            """First derivative ∂TF/∂fe  (units: 1 / [kHz · ms])"""
+            """First derivative ∂TF/∂fe (dimensionless for kHz/kHz)."""
             return (TF(fe + df, fi, fe_ext, fi_ext, W) -
-                    TF(fe - df, fi, fe_ext, fi_ext, W)) / (2 * df * 1e3)
+                    TF(fe - df, fi, fe_ext, fi_ext, W)) / (2 * df)
 
         def _dF_dI(TF, fe, fi, fe_ext, fi_ext, W):
             """First derivative ∂TF/∂fi"""
             return (TF(fe, fi + df, fe_ext, fi_ext, W) -
-                    TF(fe, fi - df, fe_ext, fi_ext, W)) / (2 * df * 1e3)
+                    TF(fe, fi - df, fe_ext, fi_ext, W)) / (2 * df)
 
         def _d2F_dE2(TF, fe, fi, fe_ext, fi_ext, W, F_at_center):
             """Second derivative ∂²TF/∂fe²"""
             return (TF(fe + df, fi, fe_ext, fi_ext, W) - 2 * F_at_center +
-                    TF(fe - df, fi, fe_ext, fi_ext, W)) / (df * 1e3) ** 2
+                    TF(fe - df, fi, fe_ext, fi_ext, W)) / df ** 2
 
         def _d2F_dI2(TF, fe, fi, fe_ext, fi_ext, W, F_at_center):
             """Second derivative ∂²TF/∂fi²"""
             return (TF(fe, fi + df, fe_ext, fi_ext, W) - 2 * F_at_center +
-                    TF(fe, fi - df, fe_ext, fi_ext, W)) / (df * 1e3) ** 2
+                    TF(fe, fi - df, fe_ext, fi_ext, W)) / df ** 2
 
         def _d2F_dEdI(TF, fe, fi, fe_ext, fi_ext, W):
             """Mixed second derivative ∂²TF/∂fe∂fi"""
             return (
                 _dF_dI(TF, fe + df, fi, fe_ext, fi_ext, W) -
                 _dF_dI(TF, fe - df, fi, fe_ext, fi_ext, W)
-            ) / (2 * df * 1e3)
+            ) / (2 * df)
 
         # Pre-compute all first derivatives (reused in covariance equations)
         dFe_dE = _dF_dE(self.TF_excitatory, E, I, E_input_exc, I_input_exc, W_e)

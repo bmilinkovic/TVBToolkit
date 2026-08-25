@@ -157,7 +157,7 @@ def _pci_metrics(times: np.ndarray, trials: np.ndarray, args: argparse.Namespace
             "significance_method": "pre_post_swap",
         },
         response_start_ms=args.response_start_ms,
-        min_source_entropy=0.08,
+        min_source_entropy=None,
         return_debug=True,
     )
     stack = np.stack([trial.T for trial in aligned], axis=0)

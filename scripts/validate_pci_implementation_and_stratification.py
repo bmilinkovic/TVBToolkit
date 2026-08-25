@@ -665,7 +665,7 @@ using empirical numerical PCI cutoffs.
 | Window | 8--300 ms after onset | First 300 ms after TMS, after artifact handling | Closely aligned in duration; model omits the first sampled pulse bin |
 | Significance | Current default: pre/post whole-block exchange with a per-time maximum over regions | Nonparametric source-level bootstrap; later empirical descriptions use maxima from resampled baseline activity | Related family-wise inference, but not demonstrated to be the same null |
 | Compression | Sort active regions, two-dimensional Lempel--Ziv complexity, entropy normalization | Same conceptual operations | Aligned |
-| Low-information guard | Source entropy must exceed 0.08 | Entropy floor 0.08 in the empirical software lineage | Aligned in intent |
+| Low-information guard | Entropy and active fraction are diagnostics only | Entropy floor 0.08 in part of the empirical software lineage | Deliberately disabled for simulations |
 
 The relevant code is in `scripts/run_serotonergic_pci_pilot.py`: anatomical target
 resolution (lines 906--937), randomized onsets (940--957), model pulse
@@ -678,7 +678,7 @@ normalization are in `src/tvbtoolkit/complexity/pci_casali.py` (103--180).
 The principal unresolved difference is the source-significance null. The analysed
 dataset used a maximum-statistic baseline trial bootstrap at alpha=0.01. The current
 production default uses complete within-trial pre/post exchange, 1,000 permutations,
-alpha=0.05 and an entropy floor of 0.08. Casali et al. 2013 describe a nonparametric
+alpha=0.05 with source entropy retained only as a diagnostic. Casali et al. 2013 describe a nonparametric
 bootstrap at source level, and later empirical descriptions specify the 99th
 percentile of maximum bootstrap-resampled baseline activity. The pre/post-exchange
 method is defensible as a separate randomization test, but it is not established as

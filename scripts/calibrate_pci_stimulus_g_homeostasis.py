@@ -122,7 +122,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--response-start-ms", type=float, default=8.0)
     p.add_argument("--pci-permutation-replicates", type=int, default=1000)
     p.add_argument("--pci-alpha", type=float, default=0.05)
-    p.add_argument("--pci-min-source-entropy", type=float, default=0.08)
+    p.set_defaults(pci_min_source_entropy=None)
     p.add_argument("--pci-st-k", type=float, default=1.2)
     p.add_argument("--pci-st-min-snr", type=float, default=1.1)
     p.add_argument("--pci-st-max-var-percent", type=float, default=99.0)
@@ -647,7 +647,7 @@ def _aggregate_trials(rows, group_keys, args):
                 "significance_method": "pre_post_swap",
             },
             response_start_ms=float(args.response_start_ms),
-            min_source_entropy=float(args.pci_min_source_entropy),
+            min_source_entropy=args.pci_min_source_entropy,
         )
         row["pci_lz"] = float(lz[0])
         trial_stack = np.stack(

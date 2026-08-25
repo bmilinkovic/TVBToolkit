@@ -131,12 +131,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--pci-seed", type=int, default=0)
     parser.add_argument("--pci-response-start-ms", type=float, default=8.0)
-    parser.add_argument(
-        "--pci-min-source-entropy",
-        type=float,
-        default=0.08,
-        help="Canonical low-activation entropy floor for PCI-LZ.",
-    )
+    parser.set_defaults(pci_min_source_entropy=None)
     parser.add_argument(
         "--pci-st-baseline-window-ms",
         type=float,
@@ -270,16 +265,14 @@ def _validate_cli(args: argparse.Namespace) -> None:
         and np.isclose(
             float(args.pci_response_start_ms), 8.0, rtol=0.0, atol=1e-12
         )
-        and np.isclose(
-            float(args.pci_min_source_entropy), 0.08, rtol=0.0, atol=1e-12
-        )
+        and args.pci_min_source_entropy is None
     )
     if not canonical_lz:
         raise ValueError(
             "This production convergence workflow locks PCI-LZ to "
             "pre_post_swap, 1000 permutations, "
-            f"alpha={pilot.DEFAULT_PCI_ALPHA:g}, response start 8 ms, and "
-            "minimum source entropy=.08."
+            f"alpha={pilot.DEFAULT_PCI_ALPHA:g}, response start 8 ms, with "
+            "no source-entropy cutoff."
         )
 
 
@@ -588,7 +581,7 @@ def compute_pci_metrics(
             ),
         },
         response_start_ms=float(metric_config["pci_response_start_ms"]),
-        min_source_entropy=float(metric_config["pci_min_source_entropy"]),
+        min_source_entropy=metric_config["pci_min_source_entropy"],
         return_debug=True,
     )
     if not isinstance(lz_result, dict):
@@ -1137,7 +1130,7 @@ def _analysis_manifest(
             "alpha": float(args.pci_alpha),
             "seed": int(args.pci_seed),
             "response_start_ms": float(args.pci_response_start_ms),
-            "min_source_entropy": float(args.pci_min_source_entropy),
+            "min_source_entropy": args.pci_min_source_entropy,
         },
         "pci_st": {
             "input": "continuous_trial_average",
@@ -1277,7 +1270,7 @@ def main(argv: list[str] | None = None) -> None:
         "pci_alpha": float(args.pci_alpha),
         "pci_seed": int(args.pci_seed),
         "pci_response_start_ms": float(args.pci_response_start_ms),
-        "pci_min_source_entropy": float(args.pci_min_source_entropy),
+        "pci_min_source_entropy": args.pci_min_source_entropy,
         "pci_st_baseline_window_ms": [
             float(value) for value in args.pci_st_baseline_window_ms
         ],

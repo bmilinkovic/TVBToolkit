@@ -62,7 +62,7 @@ def test_defaults_lock_practical_canonical_workflow() -> None:
     assert args.pci_permutation_replicates == 1000
     assert args.pci_alpha == 0.05
     assert args.pci_response_start_ms == 8.0
-    assert args.pci_min_source_entropy == 0.08
+    assert args.pci_min_source_entropy is None
     assert args.pci_st_baseline_window_ms == [-300.0, -50.0]
     assert args.pci_st_response_window_ms == [8.0, 300.0]
 
@@ -188,7 +188,7 @@ def test_both_estimators_run_on_synthetic_aligned_trials() -> None:
             "pci_alpha": 0.1,
             "pci_seed": 7,
             "pci_response_start_ms": 8.0,
-            "pci_min_source_entropy": 0.08,
+            "pci_min_source_entropy": None,
             "pci_st_baseline_window_ms": [-300.0, -50.0],
             "pci_st_response_window_ms": [0.0, 300.0],
             "pci_st_k": 1.2,

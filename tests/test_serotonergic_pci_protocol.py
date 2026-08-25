@@ -375,7 +375,7 @@ def test_production_defaults_lock_one_hundred_casali_trials() -> None:
     assert args.pci_bootstrap_replicates == 1000
     assert args.pci_alpha == 0.05
     assert args.pci_response_start_ms == 8.0
-    assert args.pci_min_source_entropy == 0.08
+    assert args.pci_min_source_entropy is None
     assert args.pci_st_baseline_window_ms == [-300.0, -50.0]
     assert args.pci_st_response_window_ms == [8.0, 300.0]
     assert args.pci_st_k == 1.2
@@ -491,7 +491,7 @@ def test_analysis_changes_do_not_change_simulation_fingerprint() -> None:
             "pci_bootstrap_replicates": 1000,
             "pci_alpha": 0.05,
             "pci_response_window_ms": [8.0, 300.0],
-            "pci_min_source_entropy": 0.08,
+            "pci_min_source_entropy": None,
         }
     )
     second = _with_split_fingerprints(changed)
@@ -522,7 +522,7 @@ def test_legacy_manifest_is_reused_with_its_npz_fingerprint(tmp_path) -> None:
             "pci_bootstrap_replicates": 1000,
             "pci_alpha": 0.05,
             "pci_response_window_ms": [8.0, 300.0],
-            "pci_min_source_entropy": 0.08,
+            "pci_min_source_entropy": None,
         }
     )
     requested = _with_split_fingerprints(requested)

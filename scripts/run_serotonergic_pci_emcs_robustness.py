@@ -57,7 +57,7 @@ from tvbtoolkit.whole_brain.legacy_engine.parameter.parameter_M_Berlin_new impor
 
 
 PROTOCOL_VERSION = (
-    "emcs-adex-robustness-v2.1-100trials-time-locked-atlas-aligned-provenance"
+    "emcs-adex-robustness-v2.2-100trials-time-locked-atlas-aligned-zerlaut-so-khz-v2"
 )
 SUBJECT_SELECTION_RATIONALE = (
     "Pre-specified EMCS exemplar fixed before the corrected full-cohort rerun, "
@@ -199,7 +199,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
     )
     parser.add_argument("--pci-response-start-ms", type=float, default=8.0)
-    parser.add_argument("--pci-min-source-entropy", type=float, default=0.08)
+    parser.set_defaults(pci_min_source_entropy=None)
     parser.add_argument("--e-l-e-drug", type=float, default=-61.2)
     parser.add_argument("--e-l-i-drug", type=float, default=-64.4)
     parser.add_argument(
@@ -427,12 +427,8 @@ def _validate_inputs(args: argparse.Namespace) -> None:
             raise ValueError(
                 "The production robustness PCI response window begins at 8 ms."
             )
-        if not np.isclose(
-            float(args.pci_min_source_entropy), 0.08, rtol=0.0, atol=1e-12
-        ):
-            raise ValueError(
-                "The production low-activation source-entropy floor is 0.08."
-            )
+        if args.pci_min_source_entropy is not None:
+            raise ValueError("The simulation PCI source-entropy cutoff must be disabled.")
         if not np.isclose(
             float(args.e_l_e_drug),
             -61.2,
@@ -674,7 +670,7 @@ def _build_protocol_manifest(
             float(args.pci_response_start_ms),
             float(args.t_analysis_ms),
         ],
-        "pci_min_source_entropy": float(args.pci_min_source_entropy),
+        "pci_min_source_entropy": args.pci_min_source_entropy,
         "model_family": "adex_zerlaut",
         "model_form": "split_gK_gNa_all_occupancies",
         "split_gK_gNa_at_occupancy_zero": True,
@@ -1289,7 +1285,7 @@ def _aggregate(
                 alpha=float(args.pci_alpha),
                 bootstrap_seed=int(args.pci_bootstrap_seed),
                 response_start_ms=float(args.pci_response_start_ms),
-                min_source_entropy=float(args.pci_min_source_entropy),
+                min_source_entropy=args.pci_min_source_entropy,
             )
             pci_values = np.asarray(pci_values, dtype=float)
             dose_rows.append(

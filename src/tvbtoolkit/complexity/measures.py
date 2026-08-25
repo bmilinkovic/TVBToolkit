@@ -470,7 +470,7 @@ def pci_casali_like_multi_trial(
     binarise_method: str = "tvbsim",
     binarise_kwargs: dict[str, Any] | None = None,
     response_start_ms: float = 0.0,
-    min_source_entropy: float | None = 0.08,
+    min_source_entropy: float | None = None,
     return_debug: bool = False,
 ) -> "tuple[float, np.ndarray] | dict[str, Any]":
     """Compute Casali-style PCI from multiple stimulation trials.
@@ -529,12 +529,11 @@ def pci_casali_like_multi_trial(
         Delay after stimulation onset at which the response matrix begins.
         This is useful for excluding the stimulation pulse or a TMS artifact.
         The value is rounded upward to the next complete sample.
-    min_source_entropy : float or None, default=0.08
-        For the Casali route, return PCI=0 when the Bernoulli entropy
-        of the significant source-time matrix is at or below this value.
-        The empirical PCI protocol uses 0.08 to prevent unstable Lempel-Ziv
-        normalization when significant activity is absent or below roughly
-        one percent. Pass ``None`` only for a documented sensitivity analysis.
+    min_source_entropy : float or None, default=None
+        Optional empirical low-activation guard. When supplied, the Casali
+        route returns PCI=0 if response-matrix entropy is at or below this
+        value. It is disabled by default for simulations: entropy and active
+        fraction remain diagnostics and never replace the calculated PCI.
     return_debug : bool, default=False
         Return the PCI value together with the binary response, threshold and
         null-distribution diagnostics. This is intended for auditable
@@ -677,6 +676,7 @@ def pci_casali_like_multi_trial(
             return pci, pci_values
         return {
             "pci": pci,
+            "pci_calculated_complexity": pci_unthresholded,
             "pci_before_entropy_floor": pci_unthresholded,
             "pci_values": pci_values,
             "lz": lz_val,

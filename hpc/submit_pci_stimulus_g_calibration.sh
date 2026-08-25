@@ -52,7 +52,6 @@ python scripts/calibrate_pci_stimulus_g_homeostasis.py \
   --homeostatic-post-ms 1500 \
   --pci-permutation-replicates 1000 \
   --pci-alpha 0.05 \
-  --pci-min-source-entropy 0.08 \
   --pci-st-k 1.2 \
   --pci-st-min-snr 1.1 \
   --pci-st-max-var-percent 99 \

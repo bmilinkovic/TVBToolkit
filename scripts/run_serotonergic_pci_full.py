@@ -170,7 +170,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
     )
     p.add_argument("--pci-response-start-ms", type=float, default=8.0)
-    p.add_argument("--pci-min-source-entropy", type=float, default=0.08)
+    p.set_defaults(pci_min_source_entropy=None)
     p.add_argument("--pci-st-baseline-window-ms", type=float, nargs=2,
                    default=[-300.0, -50.0], metavar=("START", "STOP"))
     p.add_argument("--pci-st-response-window-ms", type=float, nargs=2,
@@ -327,12 +327,8 @@ def _validate_full_protocol(args: argparse.Namespace) -> None:
         float(args.pci_response_start_ms), 8.0, rtol=0.0, atol=1e-12
     ):
         raise ValueError("The production PCI response window begins at 8 ms.")
-    if not np.isclose(
-        float(args.pci_min_source_entropy), 0.08, rtol=0.0, atol=1e-12
-    ):
-        raise ValueError(
-            "The production low-activation source-entropy floor is 0.08."
-        )
+    if args.pci_min_source_entropy is not None:
+        raise ValueError("The simulation PCI source-entropy cutoff must be disabled.")
     if not np.allclose(args.pci_st_baseline_window_ms, [-300.0, -50.0]):
         raise ValueError("Production PCI-ST baseline window is [-300, -50) ms.")
     if not np.allclose(args.pci_st_response_window_ms, [8.0, 300.0]):
@@ -435,7 +431,7 @@ def _run_manifest(args: argparse.Namespace, subjects: list[Any], scenario_cfg: d
             float(args.pci_response_start_ms),
             float(args.t_analysis_ms),
         ],
-        "pci_min_source_entropy": float(args.pci_min_source_entropy),
+        "pci_min_source_entropy": args.pci_min_source_entropy,
         "pci_st_baseline_window_ms": [float(x) for x in args.pci_st_baseline_window_ms],
         "pci_st_response_window_ms": [float(x) for x in args.pci_st_response_window_ms],
         "pci_st_k": float(args.pci_st_k),

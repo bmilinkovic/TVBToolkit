@@ -71,7 +71,6 @@ python scripts/run_serotonergic_pci_full.py \
   --pci-alpha 0.05 \
   --pci-permutation-seed 0 \
   --pci-response-start-ms 8 \
-  --pci-min-source-entropy 0.08 \
   --pci-st-baseline-window-ms -300 -50 \
   --pci-st-response-window-ms 8 300 \
   --pci-st-k 1.2 \

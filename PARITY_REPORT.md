@@ -3,6 +3,15 @@
 
 *Date: 2026-04-23*
 
+> **Correction notice (2026-08-25):** this report established implementation
+> parity, not equation-level correctness. A later unit and Jacobian audit found
+> that numerical first derivatives were scaled by `1e-3` and Hessians by
+> `1e-6` relative to consistent kHz/kHz² state units. It also found two
+> incorrect covariance partial derivatives in the split `gK/gNa` model. These
+> equations are now corrected in native TVBToolkit. Results made with the old
+> equations are superseded and should not be combined with corrected runs. See
+> `docs/zerlaut_second_order_audit.md`.
+
 ---
 
 ## Executive Summary

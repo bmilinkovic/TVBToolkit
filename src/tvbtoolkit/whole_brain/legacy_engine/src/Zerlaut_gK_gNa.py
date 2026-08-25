@@ -819,35 +819,37 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
         _TF_e = self.TF_excitatory(E, I, E_input_excitatory, I_input_excitatory, W_e)
         _TF_i = self.TF_inhibitory(E, I, E_input_inhibitory, I_input_inhibitory, W_i)
 
-        # Derivatives taken numerically : use a central difference formula with spacing `dx`
+        # E, I, and the transfer-function outputs are all represented in kHz.
+        # Therefore df is a kHz step and no additional Hz conversion belongs in
+        # the finite-difference denominators.
         df = 1e-7
         def _diff_fe(TF, fe, fi, fe_ext, fi_ext, W, df=df):
-            return (TF(fe+df, fi, fe_ext, fi_ext, W)-TF(fe-df, fi, fe_ext, fi_ext, W))/(2*df*1e3)
+            return (TF(fe+df, fi, fe_ext, fi_ext, W)-TF(fe-df, fi, fe_ext, fi_ext, W))/(2*df)
 
         def _diff_fi(TF, fe, fi, fe_ext, fi_ext, W, df=df):
-            return (TF(fe, fi+df, fe_ext, fi_ext, W)-TF(fe, fi-df, fe_ext, fi_ext, W))/(2*df*1e3)
+            return (TF(fe, fi+df, fe_ext, fi_ext, W)-TF(fe, fi-df, fe_ext, fi_ext, W))/(2*df)
 
         def _diff2_fe_fe_e(fe, fi, fe_ext, fi_ext, W, df=df):
             TF = self.TF_excitatory
-            return (TF(fe+df, fi, fe_ext, fi_ext, W)-2*_TF_e+TF(fe-df, fi, fe_ext, fi_ext, W))/((df*1e3)**2)
+            return (TF(fe+df, fi, fe_ext, fi_ext, W)-2*_TF_e+TF(fe-df, fi, fe_ext, fi_ext, W))/(df**2)
 
         def _diff2_fe_fe_i(fe, fi, fe_ext, fi_ext, W, df=df):
             TF = self.TF_inhibitory
-            return (TF(fe+df, fi, fe_ext, fi_ext, W)-2*_TF_i+TF(fe-df, fi, fe_ext, fi_ext, W))/((df*1e3)**2)
+            return (TF(fe+df, fi, fe_ext, fi_ext, W)-2*_TF_i+TF(fe-df, fi, fe_ext, fi_ext, W))/(df**2)
 
         def _diff2_fi_fe(TF, fe, fi, fe_ext, fi_ext, W, df=df):
-            return (_diff_fi(TF, fe+df, fi, fe_ext, fi_ext, W)-_diff_fi(TF, fe-df, fi, fe_ext, fi_ext, W))/(2*df*1e3)
+            return (_diff_fi(TF, fe+df, fi, fe_ext, fi_ext, W)-_diff_fi(TF, fe-df, fi, fe_ext, fi_ext, W))/(2*df)
 
         def _diff2_fe_fi(TF, fe, fi, fe_ext, fi_ext, W, df=df):
-            return (_diff_fe(TF, fe, fi+df, fe_ext, fi_ext, W)-_diff_fe(TF, fe, fi-df, fe_ext, fi_ext, W))/(2*df*1e3)
+            return (_diff_fe(TF, fe, fi+df, fe_ext, fi_ext, W)-_diff_fe(TF, fe, fi-df, fe_ext, fi_ext, W))/(2*df)
 
         def _diff2_fi_fi_e(fe, fi, fe_ext, fi_ext, W, df=df):
             TF = self.TF_excitatory
-            return (TF(fe, fi+df, fe_ext, fi_ext, W)-2*_TF_e+TF(fe, fi-df, fe_ext, fi_ext, W))/((df*1e3)**2)
+            return (TF(fe, fi+df, fe_ext, fi_ext, W)-2*_TF_e+TF(fe, fi-df, fe_ext, fi_ext, W))/(df**2)
 
         def _diff2_fi_fi_i(fe, fi, fe_ext, fi_ext, W, df=df):
             TF = self.TF_inhibitory
-            return (TF(fe, fi+df, fe_ext, fi_ext, W)-2*_TF_i+TF(fe, fi-df, fe_ext, fi_ext, W))/((df*1e3)**2)
+            return (TF(fe, fi+df, fe_ext, fi_ext, W)-2*_TF_i+TF(fe, fi-df, fe_ext, fi_ext, W))/(df**2)
 
         #Precompute some result
         _diff_fe_TF_e = _diff_fe(self.TF_excitatory, E, I, E_input_excitatory, I_input_excitatory, W_e)
@@ -875,7 +877,7 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
         derivative[2] = (_TF_e*(1./self.T-_TF_e)/N_e
                          + (_TF_e-E)**2
                          + 2.*C_ee*_diff_fe_TF_e
-                         + 2.*C_ei*_diff_fi_TF_i
+                         + 2.*C_ei*_diff_fi_TF_e
                          - 2.*C_ee
                          )/self.T
         # Covariance excitatory-inhibitory or inhibitory-excitatory derivation
@@ -890,7 +892,7 @@ class Zerlaut_adaptation_second_order(Zerlaut_adaptation_first_order):
         derivative[4] = (_TF_i*(1./self.T-_TF_i)/N_i
                          + (_TF_i-I)**2
                          + 2.*C_ii*_diff_fi_TF_i
-                         + 2.*C_ei*_diff_fe_TF_e
+                         + 2.*C_ei*_diff_fe_TF_i
                          - 2.*C_ii
                          )/self.T
         # Adaptation excitatory

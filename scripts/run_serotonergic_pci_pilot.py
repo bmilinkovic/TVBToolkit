@@ -66,7 +66,7 @@ CONDITION_B_GRADIENT = {
     "COMA": 75.0,
 }
 
-PROTOCOL_VERSION = "6.0-native-invnodevol-time-locked-dual-pci"
+PROTOCOL_VERSION = "6.1-native-invnodevol-time-locked-dual-pci-zerlaut-so-khz-v2"
 ANALYSIS_PROTOCOL_VERSION = "2.0-pci-lz-pci-st"
 DEFAULT_STIM_REGION_LABEL = "Supp_Motor_Area_L"
 DEFAULT_PCI_ALPHA = 0.05
@@ -212,15 +212,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "or after 8 ms."
         ),
     )
-    p.add_argument(
-        "--pci-min-source-entropy",
-        type=float,
-        default=0.08,
-        help=(
-            "Set PCI to zero when significant source activity has entropy at "
-            "or below this value (empirical default: 0.08)."
-        ),
-    )
+    p.set_defaults(pci_min_source_entropy=None)
     p.add_argument("--e-l-e-drug", type=float, default=-61.2)
     p.add_argument("--e-l-i-drug", type=float, default=-64.4)
     p.add_argument(
@@ -940,8 +932,8 @@ def _validate_protocol_args(args: argparse.Namespace) -> None:
             "--pci-response-start-ms must be non-negative and smaller than "
             "--t-analysis-ms."
         )
-    if not 0.0 <= float(args.pci_min_source_entropy) <= 1.0:
-        raise ValueError("--pci-min-source-entropy must lie within [0, 1].")
+    if args.pci_min_source_entropy is not None:
+        raise ValueError("Simulation PCI source-entropy cutoffs are disabled.")
 
 
 def _resolve_stim_regions(args: argparse.Namespace):
@@ -1386,7 +1378,7 @@ def _compute_pci_for_condition(
     alpha: float = DEFAULT_PCI_ALPHA,
     bootstrap_seed: int = 0,
     response_start_ms: float = 8.0,
-    min_source_entropy: float = 0.08,
+    min_source_entropy: float | None = None,
 ) -> tuple[float, np.ndarray]:
     trials, onset, dt_ms, t_analysis_ms = _load_trials(paths)
     binarise_kwargs = None
@@ -1405,7 +1397,7 @@ def _compute_pci_for_condition(
         binarise_method=binarise_method,
         binarise_kwargs=binarise_kwargs,
         response_start_ms=float(response_start_ms),
-        min_source_entropy=float(min_source_entropy),
+        min_source_entropy=min_source_entropy,
     )
     if str(binarise_method).lower() == "casali" and np.asarray(pci_values).shape != (1,):
         raise AssertionError(
@@ -1571,7 +1563,7 @@ def main() -> None:
             float(args.pci_response_start_ms),
             float(args.t_analysis_ms),
         ],
-        "pci_min_source_entropy": float(args.pci_min_source_entropy),
+        "pci_min_source_entropy": args.pci_min_source_entropy,
         "atlas_ordering": str(atlas.ordering),
         "atlas_source": str(atlas.source),
         "atlas_labels_sha256": str(args.atlas_labels_sha256),
