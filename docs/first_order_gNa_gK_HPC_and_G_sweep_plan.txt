@@ -1,0 +1,242 @@
+FIRST-ORDER gNa/gK -> HPC TMS SIMULATIONS -> SEPARATE PCI ANALYSIS
+Agreed working plan, saved 2026-10-02
+
+UPDATE AGREED 2026-10-04 (supersedes candidate-selection wording below):
+Use condition-specific b: control=5, EMCS=15, MCS=30, UWS=60 pA;
+tau_w=500 ms for all conditions. No common-parameter production arm is requested.
+Keep these as phenotype representatives, not empirically fitted patient values.
+Implement the small trajectory/OFF/recovery gNa/gK pilot and separate HPC scripts
+first. Discuss/revise the existing TVBToolkit VBI integration afterwards; do not
+modify VBI in this step. New implementation and instructions:
+  experiments/first_order_gnak/protocol.json
+  hpc/README_first_order_gnak.md
+  hpc/submit_first_order_gnak_tms50.sh
+  hpc/submit_first_order_gnak_pci_analysis.sh
+
+PURPOSE AND STATUS
+
+Study how simulated 5-HT2A receptor activation affects perturbational complexity
+across control/Wake, EMCS, MCS and UWS, using subject-specific AAL90 connectomes.
+Exclude COMA from simulation manifests, analyses and group summaries.
+
+This file is a durable project reference, not a claim that these steps have
+already been completed. The current adaptation sweep is separate and should
+continue unchanged. Its results will inform parameter selection. No final
+b/tau_w choices or new HPC submissions are authorised by this document alone.
+The user has no individual empirical TMS/EEG targets: selected adaptation values
+are provisional phenotype-based candidates, NOT individually fitted parameters.
+
+Use FIRST-ORDER AdEx only. Do not modify or use second-order covariance equations
+or derivative scaling. Do not refit transfer functions, clip firing rates, use
+a graph Laplacian, or change connectivity scaling to hide pathological dynamics.
+
+Current adaptation protocol: experiments/adaptation_b_tau/protocol.json
+Current output: results/adaptation_b_tau_v1/
+Current G = 0.05.
+Connectivity: inverse-node-volume weights divided by ONE common reference-control
+maximum SINGLE EDGE, c = 122.63607788085938. Not row/degree normalization, not
+subject-specific normalization. Preserve zeros, relative weights and delays.
+Dataset: data/doc_data/converted_structural_invnodevol_control_max/
+
+STEP 1 -- SMALL, TARGETED FIRST-ORDER gNa/gK VALIDATION
+
+Do NOT repeat the entire 9,666-pair adaptation sweep.
+
+1. Select a small number of candidate (b, tau_w) regimes from the existing sweep.
+   Consider a common regime across subjects and, separately, a condition-specific
+   candidate mapping. Do not assume that greater diagnostic severity requires
+   larger b or tau_w. Do not select parameters to maximise expected PCI ordering.
+
+2. Establish zero-occupancy equivalence with the validated standard first-order
+   model. Match all cellular, transfer-function, noise, coupling, initial-state
+   and integration settings, including:
+       g_K + g_Na = g_L
+       (g_K*E_K + g_Na*E_Na)/(g_K + g_Na) = E_L
+   Check both E and I populations, RHS/transfer-function outputs and matched-noise
+   trajectories. These leak identities are necessary, not by themselves proof
+   that every implementation detail is equivalent. Investigate any discrepancy
+   before treating the adaptation results as transferable.
+
+3. Use first-order split-leak gNa/gK at ALL occupancies, including zero.
+   Existing occupancy values: 0, 0.25, 0.50, 0.766.
+   Reuse the established Cimbi 5-HT2A map and its AAL label alignment.
+   Existing mapping holds sodium leak fixed and reduces potassium leak:
+       g_K,i(o) = g_K,0 - o*rho_normalized,i*(g_K,0 - g_K,drug)
+   Verify actual parameters, receptor normalization and regional alignment;
+   occupancy is a model parameter, not a calibrated administered drug dose.
+
+4. Initial pilot: two subjects per condition x four occupancies x five independent
+   trials = 160 trials per selected parameter strategy. Include structurally
+   contrasting subjects. This is a screening check, not proof of zero failure
+   probability across the cohort.
+
+5. Check baseline E/I rates, adaptation, switching, stationarity, propagation,
+   OFF periods, recovery and sustained high-rate recruitment. Distinguish a finite
+   high-rate attractor from numerical divergence. Preserve failed outcomes.
+   Test whether THREE SECONDS is sufficient equilibration at the selected settings
+   and occupancies. The running adaptation sweep used longer equilibration;
+   shortening it for production requires this explicit check.
+
+6. Candidate pulse from the prior screen: 5 ms, 0.35 Hz/ms, into the excitatory
+   firing-rate derivative in left supplementary motor cortex (AAL index 9 in the
+   current ordering). Resolve the target by label, not an unchecked hard-coded
+   index. This is a rate-derivative input, not a fixed 0.35-Hz state jump or a
+   literal electromagnetic TMS waveform. Revalidate it under receptor modulation.
+
+If the pilot fails, diagnose the specific cause and explore only the necessary
+local parameter neighbourhood. Do not automatically restart the full sweep.
+
+STEP 2 -- NEW HPC FILES, LOCKED PARAMETERS, SEPARATE SIMULATION AND PCI JOBS
+
+Create new files/output directories rather than overwriting historical workflows.
+Suggested names (not yet implemented):
+   hpc/submit_first_order_gnak_tms50.sh
+   hpc/submit_first_order_gnak_pci_analysis.sh
+   a simulation-only Python runner
+   an analysis-only Python runner
+   a locked, versioned parameter/subject/trial manifest
+
+Reuse native configuration and simulation functions, not duplicated model equations.
+Existing reference: hpc/submit_serotonergic_pci_full.sh
+Its resource allocation is workq, one node, one task, 48 CPUs per task, mem=0
+(all node memory), 14-day limit. Preserve the applicable established allocation;
+bound worker count by measured memory use and avoid nested numerical threading.
+Analysis has its own allocation and independent submission. It must be possible
+to rerun analyses without rerunning simulations.
+
+Do NOT reuse the old runner unchanged: it selects second order, requires COMA and
+100 trials, checks a different connectivity normalization, and retains older
+significance procedures/windows. New scripts must explicitly reject those
+incompatible settings. No HPC jobs have been submitted as part of this plan.
+
+Lock before production:
+   - b and tau_w (one common pair or a declared condition-specific mapping);
+   - pulse amplitude, duration, target and injection mechanism;
+   - G for the primary analysis (currently 0.05, pending validation);
+   - model order, cellular/TF parameters, background/noise settings;
+   - integrator, timestep, conduction speed and connectivity normalization;
+   - receptor map and occupancy-to-conductance mapping;
+   - seeds, onset schedule, recording resolution and analysis specifications.
+Hold b/tau_w and the pulse fixed across occupancy within each strategy.
+
+Production simulation specification:
+   - 179 subjects if the inventory remains unchanged: 35 control, 18 EMCS,
+     75 MCS and 51 UWS; NO COMA.
+   - Four occupancies: 0, 0.25, 0.50, 0.766.
+   - 50 independently seeded trials per subject x occupancy x parameter strategy.
+   - Each trial is a continuous 10-second stochastic simulation with one pulse.
+   - Exclude the initial 3 seconds, conditional on the equilibration check.
+   - Randomise pulse onset within the retained period with boundary safeguards.
+     The PCI windows alone permit onset 3.4--9.7 s. Preferred range is 3.4--8.0 s,
+     retaining at least 2 s afterwards for OFF/recovery diagnostics. Freeze the
+     exact random-onset distribution and bounds in the final manifest.
+   - Match trial seed and onset schedules across occupancies/G within a subject;
+     use independent seeds across trials and subjects.
+   - Save E, I and adaptation for all regions throughout the retained seven
+     seconds, preferably at 1-ms resolution, plus onset/end and full provenance.
+   - Record the actual delivered stimulus timing. Time-lock EACH trial to onset
+     before extracting epochs or trial averaging. Handle sample alignment
+     explicitly; do not confuse milliseconds with sample indices.
+   - Save all outcomes, including invalid/high-rate/non-recovering trials.
+
+Count: 179 x 4 x 50 = 35,800 stimulated trials per strategy per G.
+Two strategies at one G = 71,600 trials. Additional G values multiply this cost.
+No mandatory full-cohort sham doubling is specified here; the primary PCI inputs
+are pre/post recordings, NOT stimulated-minus-unstimulated trajectories.
+
+Separate PCI analysis run:
+   Common baseline window: -400 to -100 ms relative to pulse onset.
+   Common response window: 0 to 300 ms relative to onset, NOT pulse end.
+   No high-pass filter, no 0.08 entropy floor, no pre/post swaps for native PCI-LZ,
+   and no subtraction of unstimulated recordings. Freeze any low-pass/downsampling
+   choices explicitly and apply comparable preprocessing across methods.
+   Saved 1-ms data allow later analysis resampling. The current 3-ms analysis
+   interval is 333.33 Hz sampling, NOT 256 Hz.
+
+   A. Native PCI-LZ: use the ensemble of trials for baseline-bootstrap significance
+      of the evoked response, then compress the binary activation matrix.
+      Current planned alpha = 0.10. Record bootstrap count, correction method,
+      binarisation, ordering, compression and normalization exactly.
+   B. PCI-ST: apply the existing implementation to the trial-averaged evoked
+      response, documenting baseline/SNR and state-transition settings.
+   C. Historical TVBSim: compute its historical estimator on individual trials,
+      then average those trial values. Verify the exact legacy implementation;
+      label historical cutoff/indexing quirks rather than silently treating them
+      as the same estimator as native PCI-LZ. Keep exact historical replication
+      separate from a harmonized-window comparison if these differ.
+
+   PCI(mean response) generally does NOT equal mean(PCI of individual trials).
+   Compare methods on the SAME saved data, save activation/significance matrices,
+   scalar values and diagnostics, including all-region and source-excluded checks.
+   Test trial-count convergence using repeated subsets of 10,20,30,40,50 trials.
+   If necessary add trials only where convergence is inadequate. Fifty is a
+   planned starting count, not a guarantee of reliability.
+   Subjects, not trials, are independent units for cohort inference.
+
+STEP 3 -- HYPOTHESIS-DRIVEN G SENSITIVITY SWEEP
+
+Primary question:
+Does the effect of 5-HT2A receptor activation on perturbational complexity depend
+on the strength of communication through the remaining structural network?
+
+Current G = 0.05 under the shared-control-maximum scaling. Schematically:
+   L_i(t) = G * sum_j W_ij * E_j(t - delay_ij)
+Trace/report the exact implemented input path and units in the final workflow.
+G scales long-range influence, not occupancy, connection density or delays.
+It cannot restore zero-valued damaged connections. Actual input also depends on
+presynaptic activity; doubling G need not double the final self-consistent input.
+G values from differently normalized datasets are not directly comparable.
+
+Candidate pilot grid (NOT established physiological bounds):
+   G = 0.025, 0.0375, 0.05, 0.0625, 0.075
+   Optional G=0 mechanistic control for long-range propagation.
+These span 50--150% of current G. First screen representative subjects across all
+four occupancies with the locked adaptation/pulse settings. Refine near transitions
+only if useful. Do not commit the whole cohort to every G before this check.
+
+Keep G and occupancy as independent factors: do not automatically increase G with
+occupancy, or retune b/tau_w/pulse at every G. Use one common G grid across subjects
+without equalizing away damaged connectivity. Maintain the shared SC scalar.
+The adaptation choices were identified at G=0.05: this tests their robustness,
+not a comprehensive joint G x b x tau_w parameter search.
+
+Keep a fixed-G primary analysis, then a separately labelled sensitivity analysis.
+Select the defensible G range using baseline plausibility, stability, responsiveness
+and recovery, not maximal PCI or expected diagnostic ordering. Preserve all
+pathological results and report failure fractions; do not silently retain only
+surviving trials/subjects. Do not equate functional-connectivity changes with an
+established change in the model's scalar G.
+
+For each PCI method and subject calculate:
+   delta_PCI_s(G,o) = PCI_s(G,o) - PCI_s(G,0)
+Questions:
+   1. Does occupancy change PCI at reference G?
+   2. Is the effect robust over neighbouring physiological G values?
+   3. Does the occupancy effect depend on diagnostic group/structural damage?
+   4. Is an apparent increase associated with distributed transient propagation
+      and recovery, or with pathological high-rate recruitment?
+
+Outputs: G x occupancy maps of PCI and delta_PCI, invalid-regime overlays, regional
+effective long-range inputs, propagation, OFF/recovery measures, and subject-level
+paired uncertainty. A G x occupancy x group interaction is a possible analysis;
+respect repeated measures and report structural-damage associations separately.
+If effects occur only at a narrowly tuned G, report that limitation rather than
+optimizing G until the desired effect appears.
+
+DECISION ORDER / HANDOFF
+
+Finish current adaptation screen -> select provisional regimes -> small gNa/gK
+equivalence/occupancy/pulse/equilibration check -> lock manifest -> build/test new
+HPC simulation-only and analysis-only workflows -> user submits production jobs.
+Pilot the G sensitivity extension before expanding the production workload.
+
+References/context:
+   scripts/run_serotonergic_pci_pilot.py (existing receptor/conductance mapping)
+   scripts/run_serotonergic_pci_full.py (historical production; not new defaults)
+   src/tvbtoolkit/whole_brain/legacy_engine/src/Zerlaut_gK_gNa.py
+   hpc/slurm_env.sh (existing cluster environment)
+   Comolatti et al. 2019: https://pubmed.ncbi.nlm.nih.gov/31133480/
+   Siegel et al. 2024: https://doi.org/10.1038/s41586-024-07624-5
+
+This file stores project decisions for future reference. It does not imply
+guaranteed assistant memory outside the repository/context. Read it when resuming.

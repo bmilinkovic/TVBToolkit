@@ -593,6 +593,49 @@ def _build_stimulation(parameter_stimulation: dict, connection, model):
     )
 
 
+def configure_adex_simulator(cfg: WholeBrainConfig, seed: int = 0):
+    """Build the existing AdEx simulator without advancing it.
+
+    Shared by ordinary runs and checkpoint-based response analyses. Model,
+    connectivity, delay, noise and initial-history configuration are identical.
+    """
+    if cfg.model_family != "adex_zerlaut":
+        raise ValueError("configure_adex_simulator requires adex_zerlaut")
+    np.random.seed(seed)
+    parameters = Parameters()
+    pm = parameters.parameter_model
+    pm["matteo"] = cfg.zerlaut_matteo
+    pm["gK_gNa"] = cfg.zerlaut_gk_gna
+    pm["order"] = cfg.zerlaut_order
+    parameters.parameter_connection_between_region["speed"] = cfg.conduction_speed
+    parameters.parameter_coupling["coupling_parameter"]["a"] = cfg.coupling_strength
+    parameters.parameter_integrator["dt"] = cfg.dt_ms
+    parameters.parameter_integrator["stochastic"] = cfg.stochastic_integrator
+    if "noise_parameter" in parameters.parameter_integrator:
+        parameters.parameter_integrator["noise_parameter"]["dt"] = cfg.dt_ms
+    _apply_parameter_overrides(parameters, cfg.parameter_overrides)
+    pm["matteo"] = cfg.zerlaut_matteo
+    pm["gK_gNa"] = cfg.zerlaut_gk_gna
+    pm["order"] = cfg.zerlaut_order
+    _configure_monitor_mode(parameters.parameter_monitor, cfg)
+    _configure_bold_monitor(parameters.parameter_monitor, cfg)
+    model = _select_zerlaut_model(pm, online_homeostasis=cfg.online_inhibitory_homeostasis)
+    connection = _build_connectivity(parameters, cfg)
+    n_regions = int(np.asarray(connection.weights).shape[0])
+    _configure_zerlaut_model_parameters(model, parameters, n_regions)
+    _configure_shared_noise(model, pm, connection)
+    coupling = _build_coupling(parameters)
+    integrator = _build_integrator(parameters, cfg, model, connection, seed)
+    monitors = _build_monitors(parameters.parameter_monitor)
+    if not monitors:
+        raise ValueError("No monitors configured. Set monitor_mode or monitor parameters.")
+    stimulation = _build_stimulation(parameters.parameter_stimulus, connection, model)
+    return lab.simulator.Simulator(
+        model=model, connectivity=connection, coupling=coupling,
+        integrator=integrator, monitors=monitors, stimulus=stimulation,
+    ).configure()
+
+
 def run_whole_brain_simulation(cfg: WholeBrainConfig, seed: int = 0) -> WholeBrainResult:
     """Run a whole-brain simulation.
 
@@ -629,56 +672,8 @@ def run_whole_brain_simulation(cfg: WholeBrainConfig, seed: int = 0) -> WholeBra
         ).configure()
         output = sim.run(simulation_length=cfg.simulation_length_ms)
     else:
-        parameters = Parameters()
-        pm = parameters.parameter_model
-        pm["matteo"] = cfg.zerlaut_matteo
-        pm["gK_gNa"] = cfg.zerlaut_gk_gna
-        pm["order"] = cfg.zerlaut_order
-
-        parameters.parameter_connection_between_region["speed"] = cfg.conduction_speed
-        parameters.parameter_coupling["coupling_parameter"]["a"] = cfg.coupling_strength
-        parameters.parameter_integrator["dt"] = cfg.dt_ms
-        parameters.parameter_integrator["stochastic"] = cfg.stochastic_integrator
-        if "noise_parameter" in parameters.parameter_integrator:
-            parameters.parameter_integrator["noise_parameter"]["dt"] = cfg.dt_ms
-
-        _apply_parameter_overrides(parameters, cfg.parameter_overrides)
-        # Keep model-family selection controlled by explicit config, even when
-        # legacy parameter overrides include these keys.
-        pm["matteo"] = cfg.zerlaut_matteo
-        pm["gK_gNa"] = cfg.zerlaut_gk_gna
-        pm["order"] = cfg.zerlaut_order
-        _configure_monitor_mode(parameters.parameter_monitor, cfg)
-        _configure_bold_monitor(parameters.parameter_monitor, cfg)
-
-        model = _select_zerlaut_model(
-            parameters.parameter_model,
-            online_homeostasis=cfg.online_inhibitory_homeostasis,
-        )
-
-        connection = _build_connectivity(parameters, cfg)
-        connection_obj = connection
-        n_regions = int(np.asarray(connection.weights).shape[0])
-
-        _configure_zerlaut_model_parameters(model, parameters, n_regions)
-        _configure_shared_noise(model, parameters.parameter_model, connection)
-        coupling = _build_coupling(parameters)
-        integrator = _build_integrator(parameters, cfg, model, connection, seed)
-
-        monitors = _build_monitors(parameters.parameter_monitor)
-        if not monitors:
-            raise ValueError("No monitors configured. Set monitor_mode or monitor parameters.")
-        stimulation = _build_stimulation(parameters.parameter_stimulus, connection, model)
-
-        simulator = lab.simulator.Simulator(
-            model=model,
-            connectivity=connection,
-            coupling=coupling,
-            integrator=integrator,
-            monitors=monitors,
-            stimulus=stimulation,
-        )
-        simulator.configure()
+        simulator = configure_adex_simulator(cfg, seed)
+        connection_obj = simulator.connectivity
         output = simulator.run(simulation_length=cfg.simulation_length_ms)
 
     if not output or output[0] is None:

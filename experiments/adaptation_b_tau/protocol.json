@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "cohorts": ["control", "emcs", "mcs", "uws"],
+  "b_pA": [0, 10, 20, 30, 40, 50, 60, 70, 80],
+  "tau_w_ms": [250, 350, 500, 650, 800, 1000],
+  "replicates": 1,
+  "seed": 2026100219,
+  "G": 0.05,
+  "dt_ms": 0.1,
+  "saved_dt_ms": 1,
+  "equilibration_ms": 8000,
+  "baseline_ms": 6000,
+  "response_ms": 2000,
+  "pulse_ms": 5,
+  "pulse_hz_per_ms": 0.35,
+  "source_index": 9,
+  "pci": {"baseline_ms": [-400, -100], "response_ms": [0, 300], "sampling_ms": 3, "alpha": 0.1, "bootstrap": 2000, "seed": 17001, "k": 1.2, "min_snr": 1.1, "max_var_percent": 99, "n_steps": 100},
+  "states": {"smoothing_ms": 20, "fit_step_ms": 50, "bic_improvement": 10, "ashman_d": 2, "minimum_component_fraction": 0.05, "low_high_ratio": 0.5, "minimum_dwell_ms": 50, "minimum_complete_cycles": 2},
+  "off": {"baseline_quantile": 0.1, "baseline_mean_fraction": 0.5, "minimum_duration_ms": 20, "end_ms": 1000, "initial_window_ms": 50, "initial_peak_sd": 1, "initial_minimum_hz": 0.1},
+  "validity": {"E_mean_hz": [0.1, 30], "I_mean_hz": [0.1, 80], "high_hz": 100, "high_duration_ms": 100, "PFP_hz": 150, "PFP_duration_ms": 500, "negative_tolerance_hz": 0.000001},
+  "selection": {"reference_b_pA": 5, "reference_tau_w_ms": 500, "prior_weight": 0.05, "near_optimal_tolerance": 0.05, "bootstrap_subjects": 200, "seed": 1940, "ordinal_anchors": {"control": 0, "emcs": 0.25, "mcs": 0.5, "uws": 1}},
+  "interpretation": "Exploratory phenotype ranking, not empirical subject fitting. Group labels never set b or tau in simulations. Single-pair native trial-averaged PCI-LZ is unavailable; separate single-trial sensitivity is labelled. Short recordings identify switching/OFF proxies, not mathematical bistability."
+}
