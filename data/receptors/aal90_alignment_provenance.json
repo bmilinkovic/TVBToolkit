@@ -1,0 +1,200 @@
+{
+  "production_input": "/Users/borjan/CNRS/projects/TVBToolkit/data/receptors/hansen_receptors_aal90.csv",
+  "production_sha256": "552f017bf97315c55589a090e8bedaa21cdc43e5aebaea4f43ea70421c415364",
+  "raw_indexing": "first 90 of 116 nonbackground parcels",
+  "old_indexing": "entries 1:91 (one-region shift)",
+  "tracer_checks": {
+    "H3_cban_hc8_gallezot": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/H3_cban_hc8_gallezot.nii.csv",
+      "sha256": "db1c2eb56a9481eaac2d68281a0dc8fd5b3e70c23bdd97f8022bd1d5d1c316fe",
+      "old_shifted_maxscale_error": 5.551115123125783e-17
+    },
+    "GABAa-bz_flumazenil_hc16_norgaard": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/GABAa-bz_flumazenil_hc16_norgaard.csv",
+      "sha256": "1bd354c0feabb40a0e0f1ff244b00b8cc2d46e1ddf19ea10626ca34996603555",
+      "old_shifted_maxscale_error": 5.551115123125783e-17
+    },
+    "CB1_FMPEPd2_hc22_laurikainen": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/CB1_FMPEPd2_hc22_laurikainen.csv",
+      "sha256": "7e3cab994157c13561c73ead97e6c48e78378ee9e17c3c062690d133e5caf308",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "CB1_omar_hc77_normandin": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/CB1_omar_hc77_normandin.nii.csv",
+      "sha256": "54364051b2adeb22cf7af4f2b8428b0198ae3476538e489f9179195c9af4ab53",
+      "old_shifted_maxscale_error": 0
+    },
+    "VAChT_feobv_hc18_aghourian_sum": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/VAChT_feobv_hc18_aghourian_sum.csv",
+      "sha256": "a5ef516784f3a6f4965bd35569a34761419c5eba674052fbc3da7e2b6f7d6b8e",
+      "old_shifted_maxscale_error": 8.326672684688674e-17
+    },
+    "5HT2a_alt_hc19_savli": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT2a_alt_hc19_savli.csv",
+      "sha256": "f594d03765d74e8c6e3bc1f7272973c541e8336707af2ee857b105cd42ff349e",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "5HTT_dasb_hc100_beliveau": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HTT_dasb_hc100_beliveau.csv",
+      "sha256": "83e9b5e1c665d9a71412ff88ded1518226c429759195fce197fa946624e029b4",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "D2_raclopride_hc7_alakurtti": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/D2_raclopride_hc7_alakurtti.csv",
+      "sha256": "dc936862340a92cf50d9afb01d61705973828479004b8cf4cc140066ace9c49d",
+      "old_shifted_maxscale_error": 8.326672684688674e-17
+    },
+    "5HT2a_mdl_hc3_talbot": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT2a_mdl_hc3_talbot.nii.csv",
+      "sha256": "2889fe44aa25949e7c20cdd5f598895ec9127b0fbc8154905df2a076e36c0519",
+      "old_shifted_maxscale_error": 5.551115123125783e-17
+    },
+    "5HT2a_cimbi_hc29_beliveau": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT2a_cimbi_hc29_beliveau.csv",
+      "sha256": "77fa38b16f85b52b097add98b1d11e2774cb52b422b6d2c352e0e45218f177ef",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "5HT4_sb20_hc59_beliveau": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT4_sb20_hc59_beliveau.csv",
+      "sha256": "2c1e77a1934d91b41fa0c28bba908de4837d3e1ca923b987058b001f429b21d4",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "DAT_fepe2i_hc6_sasaki": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/DAT_fepe2i_hc6_sasaki.nii.csv",
+      "sha256": "b5f48a6a2c6237ad9c1dd110e1c8c0008b702bb3111ac1dba74829da6afeebdb",
+      "old_shifted_maxscale_error": 9.8879238130678e-17
+    },
+    "VAChT_feobv_hc4_tuominen": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/VAChT_feobv_hc4_tuominen.csv",
+      "sha256": "203e832d3c2c32c7639efa0599fcf48395db091af57c041a5db4f503bc251705",
+      "old_shifted_maxscale_error": 8.326672684688674e-17
+    },
+    "MU_carfentanil_hc204_kantonen": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/MU_carfentanil_hc204_kantonen.csv",
+      "sha256": "7e55790d5eba85250e5677d261f1b91e985df0d81932dde4b57e1e85d3dee0c9",
+      "old_shifted_maxscale_error": 9.71445146547012e-17
+    },
+    "NAT_MRB_hc77_ding": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/NAT_MRB_hc77_ding.nii.csv",
+      "sha256": "0f0a2b11059b6b42720e0a404afb102bfeb93e86b72528811decdb13606b4a6b",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "D2_flb457_hc37_smith": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/D2_flb457_hc37_smith.nii.csv",
+      "sha256": "518d010bcc4b4186dc8fd09cab03464392818dbf49b9789582eaf6d7ba352513",
+      "old_shifted_maxscale_error": 9.71445146547012e-17
+    },
+    "A4B2_flubatine_hc30_hillmer": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/A4B2_flubatine_hc30_hillmer.nii.csv",
+      "sha256": "b15eca7439777f3c8d3831c6480a6230ed57c91532cf302a180be8deca2e3157",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "GABAa_flumazenil_hc6_dukart": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/GABAa_flumazenil_hc6_dukart.csv",
+      "sha256": "345f41d86bc8f3478ccb8380a9e188e00fab02f7e27859d839f9d05535608adf",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "NMDA_ge179_hc29_galovic": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/NMDA_ge179_hc29_galovic.nii.csv",
+      "sha256": "37fb75f3b06dd86aed83de6ba7542c9772e7058ecd57058bc9808fadb6ef0937",
+      "old_shifted_maxscale_error": 0
+    },
+    "D2_fallypride_hc49_jaworska": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/D2_fallypride_hc49_jaworska.csv",
+      "sha256": "6608b832dd030ab2fe45b342efb76b561da7c6cddd3bb4ef5a95c98d35d8d2c0",
+      "old_shifted_maxscale_error": 9.71445146547012e-17
+    },
+    "5HTT_dasb_hc30_savli": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HTT_dasb_hc30_savli.csv",
+      "sha256": "58a00cfe529180945de69aa1da03f55b9a028aa48b4ec8829dffbf8521c94f03",
+      "old_shifted_maxscale_error": 9.71445146547012e-17
+    },
+    "5HT1a_cumi_hc8_beliveau": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT1a_cumi_hc8_beliveau.csv",
+      "sha256": "3da06d017c1d80a309d98525fc03e49db94674755de71e425adad491d3969ea7",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "5HT1b_p943_hc22_savli": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT1b_p943_hc22_savli.csv",
+      "sha256": "b3a9d968e1b595f9e061391abaf564acd522c461b66694a274a1c2279bb45d90",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "VAChT_feobv_hc5_bedard_sum": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/VAChT_feobv_hc5_bedard_sum.csv",
+      "sha256": "a5ea2cf430d1457505950ac2cad007681f010988a79410c209d77bade83b5165",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "5HT1a_way_hc36_savli": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT1a_way_hc36_savli.csv",
+      "sha256": "32877097de82d2f0c690dd61b01adccc5f3e97995d7a6d69ed16b1ce56a8479f",
+      "old_shifted_maxscale_error": 9.020562075079397e-17
+    },
+    "mGluR5_abp_hc22_rosaneto": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/mGluR5_abp_hc22_rosaneto.csv",
+      "sha256": "51ea17b5c7b528887a4643fe76de4b6935c74434cdb3afb8af73fe9c5e616952",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "mGluR5_abp_hc28_dubois": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/mGluR5_abp_hc28_dubois.csv",
+      "sha256": "1c570696426ae7e0119053b57da27986d5318e006f409dee5f1f611be5cd2fb0",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "mGluR5_abp_hc73_smart": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/mGluR5_abp_hc73_smart.csv",
+      "sha256": "33582bcb74aa909b16842f2bec4a94211d10ab9616477207f26efdd395d498ff",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "D1_SCH23390_hc13_kaller": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/D1_SCH23390_hc13_kaller.csv",
+      "sha256": "65a81f762a6b7b6d967c08208b709fe5ab6c79220ac3cf664aca21f49ca3e744",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "MU_carfentanil_hc39_turtonen": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/MU_carfentanil_hc39_turtonen.csv",
+      "sha256": "0659ddccb267f4fbe7a37394553d826e904ce6e9bdba87608da01a98d8e62327",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "DAT_fpcit_hc174_dukart_spect": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/DAT_fpcit_hc174_dukart_spect.csv",
+      "sha256": "f8147a05a0071d050bffc9b8a928273b3da63d2ac76c1552498ce3c649105354",
+      "old_shifted_maxscale_error": 5.551115123125783e-17
+    },
+    "NAT_MRB_hc10_hesse": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/NAT_MRB_hc10_hesse.csv",
+      "sha256": "9887302d6ee8875558ee180473354a4a3ac000259c19eaeb7ac3cfd7f26a8d09",
+      "old_shifted_maxscale_error": 8.326672684688674e-17
+    },
+    "5HT1b_az_hc36_beliveau": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT1b_az_hc36_beliveau.csv",
+      "sha256": "1b61970077330e7819a6fea68abeea40ad9f5f0f2411c64fa1d7edf45a16a916",
+      "old_shifted_maxscale_error": 8.326672684688674e-17
+    },
+    "5HT1b_p943_hc65_gallezot": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT1b_p943_hc65_gallezot.nii.csv",
+      "sha256": "e18253a06d6c081c66e212ce1c71f1d8a46fa61eff48fba3e616c48b500b0098",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "M1_lsn_hc24_naganawa": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/M1_lsn_hc24_naganawa.nii.csv",
+      "sha256": "32e09514dbd063ff93651cc372a1fd80cbe75086e30e038490a9e2664921a47d",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    },
+    "D2_flb457_hc55_sandiego": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/D2_flb457_hc55_sandiego.nii.csv",
+      "sha256": "93b305d0dd5732d138e02e4e6982d218d2b1e46d020376da301c6a49671d442a",
+      "old_shifted_maxscale_error": 9.71445146547012e-17
+    },
+    "5HT6_gsk_hc30_radhakrishnan": {
+      "source": "/Users/borjan/code/Brain-Act/brain-act/results/hansen_receptors/aal90/5HT6_gsk_hc30_radhakrishnan.nii.csv",
+      "sha256": "94e969be6f81dec01a6326ec7e0ecf4c19988ee63561b36f4ffb0dffcf1d3841",
+      "old_shifted_maxscale_error": 1.1102230246251565e-16
+    }
+  },
+  "normalization": "(x-min(x))/(max(x)-min(x)), independently per map",
+  "five_ht2a_old_new_correlation": 0.5626328928297272,
+  "verified_reextraction_max_error": 0,
+  "remote_hpc_verified": false,
+  "production_files_modified": true,
+  "caveat": "VAChT excludes unavailable Spreng n=3; weights are 4,5,18. Negative PET estimates are not literal negative receptor densities. Min-max does not validate PET quantification.",
+  "correction": "Applied production table correction after audit; source hashes identify raw PET parcel inputs."
+}

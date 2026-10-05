@@ -9,7 +9,7 @@ NIfTI images into AAL-90 space using nilearn (Brain-Act pipeline).
 The atlas is stored in ``data/receptors/hansen_receptors_aal90.csv``:
   - 90 rows  : AAL regions, Precentral_L → Temporal_Inf_R (no cerebellum)
   - 37 columns: individual PET tracer maps (see ``HANSEN_TRACER_NAMES``)
-  - Values   : max-scaled to [0, 1] within each tracer map
+  - Values   : divided by each tracer maximum; some PET estimates are negative
 
 Reference: Hansen, J.Y. et al. (2022). Mapping neurotransmitter systems to
 the structural and functional organization of the human neocortex.
@@ -305,7 +305,7 @@ def get_hansen_receptors_aal90(
     - **90 rows** : AAL regions ``Precentral_L`` → ``Temporal_Inf_R``
       (cerebellum excluded).
     - **37 columns**: individual PET tracer maps (see ``HANSEN_TRACER_NAMES``).
-    - **Values**   : max-scaled to [0, 1] within each tracer.
+    - **Values**   : divided by each tracer maximum (negative PET estimates retained).
 
     Parameters
     ----------
@@ -334,6 +334,8 @@ def get_hansen_receptors_aal90(
 def get_5ht2a_aal90(
     tracer: str = "cimbi",
     csv_path: str | Path | None = None,
+    *,
+    target_labels: np.ndarray | list[str] | tuple[str, ...] | None = None,
 ) -> np.ndarray:
     """Return 5-HT2A receptor density in AAL-90 space (no cerebellum).
 
@@ -352,21 +354,18 @@ def get_5ht2a_aal90(
         Which 5-HT2A tracer to return.
     csv_path : path-like, optional
         Override path to the Hansen atlas CSV.
+    target_labels : sequence of str, optional
+        Reorder by region name to match a subject connectome (90 unique labels).
 
     Returns
     -------
     np.ndarray, shape (90,)
         5-HT2A density per AAL-90 region, max-scaled to [0, 1].
     """
-    _TRACER_COL = {
-        "cimbi":  "5HT2a_cimbi_hc29_beliveau",
-        "savli":  "5HT2a_alt_hc19_savli",
-        "talbot": "5HT2a_mdl_hc3_talbot",
-    }
-    if tracer not in _TRACER_COL:
-        raise ValueError(f"tracer must be one of {list(_TRACER_COL)}; got {tracer!r}")
-    df = get_hansen_receptors_aal90(csv_path)
-    return df[_TRACER_COL[tracer]].values.astype(float)
+    # One implementation for tracer identity, legacy-atlas rejection and label
+    # alignment, shared with the whole-brain/HPC workflows.
+    from tvbtoolkit.workflows.pharmacology import get_5ht2a_aal90 as load
+    return load(tracer, csv_path, target_labels=target_labels)
 
 
 def get_5ht2a_aal116(receptor_mat_path: str | Path | None = None) -> np.ndarray:

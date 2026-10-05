@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,7 @@ import numpy as np
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _HANSEN_AAL90_CSV = _REPO_ROOT / "data" / "receptors" / "hansen_receptors_aal90.csv"
+_MISALIGNED_ATLAS_SHA256 = "552f017bf97315c55589a090e8bedaa21cdc43e5aebaea4f43ea70421c415364"
 _5HT2A_TRACERS = {
     "cimbi": "5HT2a_cimbi_hc29_beliveau",
     "savli": "5HT2a_alt_hc19_savli",
@@ -43,6 +45,12 @@ def get_5ht2a_aal90(
         raise ValueError(f"tracer must be one of {list(_5HT2A_TRACERS)}; got {tracer!r}")
 
     path = Path(csv_path) if csv_path is not None else _HANSEN_AAL90_CSV
+    if hashlib.sha256(path.read_bytes()).hexdigest() == _MISALIGNED_ATLAS_SHA256:
+        raise ValueError(
+            "This is the historical one-region-shifted receptor atlas. "
+            "Use the corrected data/receptors/hansen_receptors_aal90.csv "
+            "and a new simulation output directory."
+        )
     column = _5HT2A_TRACERS[tracer]
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))

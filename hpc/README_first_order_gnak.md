@@ -24,6 +24,24 @@ participant data and simulation results are not included in Git.
 The old native-invnodevol dataset without the shared divisor is rejected.
 Do not use the old inference loader's independent subject normalization.
 
+### Receptor alignment correction — 2026-10-05
+
+The AAL90 PET table previously skipped its first valid region. The corrected
+CSV SHA256 is `dbcf5a2e871a057062c578b5ab0c2e5979ceb0fc169c0f944c0caf1670036247`.
+The simulation still uses the Cimbi 5-HT2A tracer and min–max regional weights;
+no cellular, stimulation, or connectivity parameters changed.
+
+Do not pull over an active job's source/input tree. After it has stopped (or in
+a separate checkout), run `git pull --ff-only`, then
+`sha256sum data/receptors/hansen_receptors_aal90.csv` and verify the hash above.
+Set new `GNAK_SIM_OUTPUT` and `GNAK_PCI_OUTPUT` directories, for example
+`results/gnak_tms50_receptor_corrected_v2` and
+`results/gnak_pci_receptor_corrected_v2`, before submitting the usual scripts.
+Nonzero-occupancy trials from the old table must not be pooled with corrected
+trials. Zero-occupancy dynamics are unchanged by this correction, but the
+default safe workflow creates a complete new run; automatic reuse is blocked.
+Existing PCI files are not corrected retrospectively: analyze new recordings.
+
 From the repository root on the cluster:
 
 ```bash

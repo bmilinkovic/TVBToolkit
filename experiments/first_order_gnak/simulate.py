@@ -56,12 +56,16 @@ def run_one(payload):
     job,p,dataset,out=payload
     name=f"{job['cohort']}_{job['subject']}_o{job['occupancy']:.3f}_r{job['trial']:03d}_warm{job['warmup_ms']}"
     folder=Path(out)/'trials'/name;folder.mkdir(parents=True,exist_ok=True)
-    sig=signature(dict(job=job,protocol=p));target=folder/'metadata.json'
+    # Protect direct worker calls too: changed receptor inputs cannot reuse an
+    # old trial merely because its subject/protocol/seed are unchanged.
+    receptor_csv_sha256=hashlib.sha256((ROOT/'data/receptors/hansen_receptors_aal90.csv').read_bytes()).hexdigest()
+    sig=signature(dict(job=job,protocol=p,receptor_csv_sha256=receptor_csv_sha256));target=folder/'metadata.json'
     if target.exists():
         previous=json.loads(target.read_text())
         if previous['signature']!=sig:raise ValueError('Cache signature mismatch')
         return previous
-    row=dict(job=job,signature=sig,status='complete')
+    row=dict(job=job,signature=sig,status='complete',receptor_csv_sha256=receptor_csv_sha256,
+             receptor_tracer='5HT2a_cimbi_hc29_beliveau',receptor_normalization='minmax')
     try:
         cfg,labels,k,rho=configuration(job,p,dataset)
         cfg.parameter_overrides['parameter_stimulus']=dict(stimtime=float(job['onset_ms']),stimdur=p['pulse_ms'],stimperiod=100000.,stimval=p['pulse_hz_per_ms']/1000,stimregion=[k],stimvariables=[0],stimshape='square')

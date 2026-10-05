@@ -323,6 +323,7 @@ def prepare(args):
     paths = sorted((ROOT / 'src/tvbtoolkit').rglob('*.py'))
     paths += list(Path(__file__).parent.glob('*.py'))
     paths += [ROOT / 'experiments/first_order_gnak/simulate.py',
+              ROOT / 'data/receptors/hansen_receptors_aal90.csv',
               ROOT / 'scripts/run_adex_impulse_response.py',
               ROOT / 'scripts/brain_states_new_doc_bold_audited.py',
               ROOT / 'scripts/first_order_amplitude_trials.py',
