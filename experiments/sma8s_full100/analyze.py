@@ -121,12 +121,16 @@ def score_case(payload):
         comp = complexity(mask)
         trials.append(dict(trial=trial, seed=meta[trial]["seed"],
                            onset_ms=meta[trial]["onset_ms"],
+                           model_order=meta[trial].get("model_order", 1),
                            peak_EI_hz=meta[trial]["peak_EI_hz"],
                            high_rate_above_150_hz=meta[trial]["high_rate_above_150_hz"],
                            longest_high_rate_run_ms=meta[trial]["longest_high_rate_run_ms"],
                            peak_EI_post_transient_hz=meta[trial]["peak_EI_post_transient_hz"],
                            high_rate_post_transient_steps=meta[trial]["high_rate_post_transient_steps"],
                            longest_high_rate_post_transient_run_ms=meta[trial]["longest_high_rate_post_transient_run_ms"],
+                           covariance_invalid_steps_post_transient=meta[trial].get("covariance_invalid_steps_post_transient", 0),
+                           covariance_invalid_steps_peri_pulse=meta[trial].get("covariance_invalid_steps_peri_pulse", 0),
+                           min_covariance_eigenvalue_post_transient_khz2=meta[trial].get("min_covariance_eigenvalue_post_transient_khz2"),
                            significant_bins=int(mask.sum()), **comp))
     subject_pci = np.asarray([r["pci_lz"] for r in trials])
     row = dict(method=method, case_index=case_index, case=case,
@@ -140,6 +144,8 @@ def score_case(payload):
                high_rate_trials=sum(r["high_rate_above_150_hz"] for r in trials),
                high_rate_post_transient_trials=sum(r["high_rate_post_transient_steps"] > 0
                                                   for r in trials),
+               covariance_invalid_post_transient_trials=sum(
+                   r["covariance_invalid_steps_post_transient"] > 0 for r in trials),
                trials=trials)
     mask_path.parent.mkdir(parents=True, exist_ok=True)
     temp = mask_path.with_suffix(".tmp.npz")
@@ -170,7 +176,8 @@ def aggregate(rows, output: Path, method: str):
                     mean_significant_bins=row["mean_significant_bins"],
                     mean_responsive_regions=row["mean_responsive_regions"],
                     high_rate_trials=row["high_rate_trials"],
-                    high_rate_post_transient_trials=row["high_rate_post_transient_trials"])
+                    high_rate_post_transient_trials=row["high_rate_post_transient_trials"],
+                    covariance_invalid_post_transient_trials=row.get("covariance_invalid_post_transient_trials", 0))
         subjects.append(flat)
         for item in row["trials"]:
             trials.append(dict(method=method, **row["case"], case_index=row["case_index"], **item))
@@ -233,6 +240,7 @@ def main():
                    surrogate_shuffles=10 if args.method == "tvbsim_two_sided_min" else None,
                    alpha_nominal=.01 if args.method == "hybrid" else None,
                    no_entropy_floor=True, no_high_rate_exclusion=True,
+                   no_covariance_exclusion=True,
                    prestim_ms=[-300, 0], poststim_ms=[0, 300],
                    note="Hybrid applies a trial-mean null to individual trials; its nominal alpha is not a calibrated per-trial error rate."
                    if args.method == "hybrid" else
