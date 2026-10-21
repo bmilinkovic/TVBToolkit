@@ -1,7 +1,7 @@
 """Run a publication-grade b_e sweep across three model scales.
 
 For each b_e value in :data:`B_VALUES_PA` this script runs three simulations
-that share an identical OU-correlated external drive trace:
+with shared OU noise innovations (different mean drive at whole-brain scale):
 
 1. **Spiking neural network (SNN)** — :func:`tvbtoolkit.brian_mf.adex.network.run_adex_network_simulation`
    (Brian2, faithful port of legacy ``adex_simulation_network.py`` used in
@@ -24,10 +24,11 @@ Shared biophysics (lab v2 defaults from
 --------------------------------------------------------------
 
 * ``N_tot = 10000``, ``g = 0.2``, ``p_connect = 0.05``.
-* ``E_L_e = -63 mV``, ``E_L_i = -65 mV``, ``tau_w_e = 500 ms``.
-* MF/WB: ``T = 20 ms``, ``zerlaut_order = 2`` (WB) or 1st-order (single-region MF).
+* ``E_L_e = -62 mV``, ``E_L_i = -65 mV``, ``tau_w_e = 500 ms``.
+* MF/WB: ``T = 20 ms``, corrected ``zerlaut_order = 2`` at both scales.
 * MF/WB: v2 ``P_e`` / ``P_i`` polynomial coefficients.
-* MF/WB initial conditions: ``E = 0.004 Hz``, ``I = 0.010 Hz``, ``W_e = 50 pA``.
+* MF/WB initial conditions: ``E = 0.005 kHz`` (5 Hz),
+  ``I = 0.012 kHz`` (12 Hz), ``W_e = 50 pA``.
 
 External-drive convention — paper Fig 4a (per scale)
 ----------------------------------------------------
@@ -65,6 +66,10 @@ local Python environment, not the sandbox.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
+import hashlib
+import json
+import os
 import pickle
 import sys
 import time
@@ -74,9 +79,12 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("TVB_USER_HOME", str(REPO_ROOT / ".tvb-temp"))
+os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/tvb-publication-mpl")
+for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_name, "1")
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from tvbtoolkit.brian_mf.adex.network import run_adex_network_simulation
 from tvbtoolkit.core.config import WholeBrainConfig
 from tvbtoolkit.whole_brain import simulation as _wb_sim_module
 from tvbtoolkit.whole_brain.simulation import run_whole_brain_simulation
@@ -87,10 +95,9 @@ from tvbtoolkit.whole_brain.legacy_engine.src import Zerlaut as _zerlaut_mod
 # Sweep configuration
 # ---------------------------------------------------------------------------
 
-B_VALUES_PA: tuple[int, ...] = (5, 25, 45, 65, 85, 105, 125)
+B_VALUES_PA: tuple[int, ...] = (5, 25, 45, 65, 85)
 # Paper Fig 4a reference: AI uses b_e=5 pA, deep NREM/UD uses b_e=120 pA.
-# This 7-point sweep walks from AI (5) through transition (25–65) to the UD
-# regime (105–125), one even step (20 pA) apart.
+# Five candidates; dynamical regimes must be measured, not inferred from b.
 
 SIM_DURATION_MS: float = 22_000.0
 CUT_TRANSIENT_MS: float = 4_000.0
@@ -106,10 +113,10 @@ SNN_BIN_MS: float = 5.0
 #   SNN + single-region MF: 0.4 Hz/fiber (chosen near b_crit on the Fig 3 yellow line)
 #   Whole-brain        : 0.315 Hz/fiber (long-range coupling supports activity)
 SNN_MF_DRIVE_HZ: float = 0.4
-WB_DRIVE_HZ:     float = 0.315
+WB_DRIVE_HZ: float = 0.315
 
 # Lab v2 defaults from notebooks/brain_act_hybrid_common.BASE_PARAMETER_MODEL_NEW
-EL_E_MV: float = -63.0
+EL_E_MV: float = -62.0  # changed from -63.0 to match Hugo's new parameters
 EL_I_MV: float = -65.0
 TAU_E_MS: float = 5.0
 TAU_I_MS: float = 5.0
@@ -117,43 +124,65 @@ TAU_I_MS: float = 5.0
 # Sacha 2025 Eq. (20) OU drive
 PAPER_SIGMA_HZ: float = 3.5
 TAU_OU_MS: float = 5.0
-DRIVE_TRACE_DT_MS: float = 0.1   # OU trace resolution (shared by SNN + MF)
+DRIVE_TRACE_DT_MS: float = 0.1  # OU trace resolution (shared by SNN + MF)
 
-# v2 transfer-function polynomial coefficients
+# Hugo's new transfer function polynomalial coefficients (v2) for Zerlaut 2nd-order and 1st-order
 P_E_V2: tuple[float, ...] = (
-    -0.04983106, 0.00506355, -0.02347012, 0.00229515, -0.00041053,
-    0.01054705, -0.03659253, 0.00743749, 0.00126506, -0.04072161,
+    -0.04829391053228397,
+    0.00015312526115162162,
+    -0.0018830942349703766,
+    0.0022357601238549274,
+    0.001287915223600697,
+    -0.011256391905113705,
+    0.007827691831503352,
+    0.0010805275269078643,
+    -0.003810751044498102,
+    0.009008257129081343,
 )
 P_I_V2: tuple[float, ...] = (
-    -0.05149122, 0.00400369, -0.00835201, 0.00024142, -0.00050706,
-    0.00143454, -0.01468669, 0.00450271, 0.00284722, -0.01535780,
+    -0.05184978,
+    0.0061593,
+    -0.01403522,
+    0.00166511,
+    -0.0020559,
+    0.00318432,
+    -0.03112775,
+    0.00656668,
+    0.00171829,
+    -0.04516385,
 )
+
+# User confirmed the coefficient ordering on 2026-10-08:
+# [1, mu, sigma, tau, mu², sigma², tau², mu*sigma, mu*tau, sigma*tau].
+# These are supplied fits, not yet validated against matched microscopic data.
 
 MF_T_MS: float = 20.0
 
 # WB-specific
 WB_INIT_COND: dict[str, list[float]] = {
-    "E":    [0.004, 0.004],
-    "I":    [0.010, 0.010],
+    "E": [0.005, 0.005],  # changed from [0.004, 0.004] to match Hugo's new parameters
+    "I": [0.012, 0.012],  # changed from [0.010, 0.010] to match Hugo's new parameters
     "C_ee": [0.0, 0.0],
     "C_ei": [0.0, 0.0],
     "C_ii": [0.0, 0.0],
-    "W_e":  [50.0, 50.0],
-    "W_i":  [0.0, 0.0],
-    "noise":[0.0, 0.0],
+    "W_e": [50.0, 50.0],
+    "W_i": [0.0, 0.0],
+    "noise": [0.0, 0.0],
 }
 WB_COUPLING_STRENGTH: float = 0.3
 DK68_CONNECTIVITY_ZIP = REPO_ROOT / "data" / "connectivity" / "connectivity_68.zip"
 
-PER_B_DIR = REPO_ROOT / "notebooks" / "outputs" / "b_sweep" / "per_b"
-PER_B_DIR.mkdir(parents=True, exist_ok=True)
+PER_B_DIR = REPO_ROOT / "notebooks" / "outputs" / "b_sweep" / "new_fit_v2" / "per_b"
 
 
 # ---------------------------------------------------------------------------
 # OU drive trace — ported verbatim from notebooks/01_mean_field_sim_test.py
 # ---------------------------------------------------------------------------
 
-def paper_sigma_to_runner_sigma_hz(paper_sigma: float, tau_ou_ms: float, dt_ms: float) -> float:
+
+def paper_sigma_to_runner_sigma_hz(
+    paper_sigma: float, tau_ou_ms: float, dt_ms: float
+) -> float:
     """Map paper Eq. (20) sigma to the discrete OU-update sigma used below."""
     tau_s = float(tau_ou_ms) / 1000.0
     target_std_hz = float(paper_sigma) * np.sqrt(max(tau_s, 1e-12) / 2.0)
@@ -217,8 +246,9 @@ def _trim_transient_tvb(time_ms: np.ndarray, raw_data: np.ndarray, cut_ms: float
 # variable still evolves but contributes nothing to the rate equation) and
 # ``stochastic_integrator=False`` (HeunDeterministic — saves compute).
 
-class _Zerlaut2OUDrive(_zerlaut_mod.Zerlaut_adaptation_second_order):
-    """TVB Zerlaut 2nd-order whose external afferent rate is read from a shared OU trace.
+
+class _OUDriveMixin:
+    """Read the same stochastic afferent trace for either mean-field order.
 
     Instance attributes are attached externally by :func:`_attach_ou_drive`:
 
@@ -233,21 +263,34 @@ class _Zerlaut2OUDrive(_zerlaut_mod.Zerlaut_adaptation_second_order):
             idx = min(self._dfun_call_count // 2, trace.size - 1)
             drive_khz = float(trace[idx])
             n_regions = int(state_variables.shape[1])
-            shape = np.full(n_regions, drive_khz, dtype=float)
+            # State slices are (region, mode), not (region,). A 1-D drive
+            # broadcasts to an erroneous region-by-region array for N > 1.
+            shape = np.full((n_regions, 1), drive_khz, dtype=float)
             self.external_input_ex_ex = shape
             self.external_input_in_ex = shape.copy()
             self._dfun_call_count += 1
         return super().dfun(state_variables, coupling, local_coupling)
 
 
+class _Zerlaut2OUDrive(_OUDriveMixin, _zerlaut_mod.Zerlaut_adaptation_second_order):
+    """Corrected second order with the shared, externally generated OU drive."""
+
+
+class _Zerlaut1OUDrive(_OUDriveMixin, _zerlaut_mod.Zerlaut_adaptation_first_order):
+    """First order with exactly the same external-drive injection."""
+
+
 def _attach_ou_drive(model, ou_trace_hz: np.ndarray) -> object:
-    """Swap a stock 2nd-order Zerlaut model to :class:`_Zerlaut2OUDrive` in-place."""
-    if not isinstance(model, _zerlaut_mod.Zerlaut_adaptation_second_order):
+    """Attach shared OU forcing to a native first- or second-order model."""
+    if isinstance(model, _zerlaut_mod.Zerlaut_adaptation_second_order):
+        model.__class__ = _Zerlaut2OUDrive
+    elif isinstance(model, _zerlaut_mod.Zerlaut_adaptation_first_order):
+        model.__class__ = _Zerlaut1OUDrive
+    else:
         raise TypeError(
-            f"OU drive injection requires Zerlaut_adaptation_second_order, "
+            f"OU drive injection requires a native standard-leak Zerlaut model, "
             f"got {type(model).__name__}"
         )
-    model.__class__ = _Zerlaut2OUDrive
     model._ou_trace_khz = np.asarray(ou_trace_hz, dtype=float) * 1e-3
     model._dfun_call_count = 0
     return model
@@ -274,6 +317,7 @@ def _patched_zerlaut_with_ou(ou_trace_hz: np.ndarray):
 # Shared OU trace — called by SNN and MF/WB runners
 # ---------------------------------------------------------------------------
 
+
 def make_shared_ou_traces() -> tuple[np.ndarray, np.ndarray]:
     """Build the two OU drive traces — one for SNN+MF, one for WB.
 
@@ -291,12 +335,12 @@ def make_shared_ou_traces() -> tuple[np.ndarray, np.ndarray]:
     common = dict(
         duration_ms=SIM_DURATION_MS,
         dt_ms=DRIVE_TRACE_DT_MS,
-        seed=SEED,                # SAME seed → same OU noise realization in both
+        seed=SEED,  # SAME seed → same OU noise realization in both
         sigma_ou_hz=sigma_runner_hz,
         tau_ou_ms=TAU_OU_MS,
     )
     snn_mf_trace = build_shared_afferent_trace_hz(v_drive_hz=SNN_MF_DRIVE_HZ, **common)
-    wb_trace     = build_shared_afferent_trace_hz(v_drive_hz=WB_DRIVE_HZ,    **common)
+    wb_trace = build_shared_afferent_trace_hz(v_drive_hz=WB_DRIVE_HZ, **common)
     return snn_mf_trace, wb_trace
 
 
@@ -304,14 +348,20 @@ def make_shared_ou_traces() -> tuple[np.ndarray, np.ndarray]:
 # Component runners
 # ---------------------------------------------------------------------------
 
+
 def run_snn_block(b_e_pa: int, *, snn_mf_trace_hz: np.ndarray) -> tuple[dict, float]:
     """Spiking AdEx network (Brian2) with the shared OU drive at baseline = SNN_MF_DRIVE_HZ."""
+    # Brian2 is only required for the optional microscopic SNN experiment.
+    # Whole-brain first-order simulations import this module for the shared
+    # transfer-function coefficients and must work on TVB-only HPC installs.
+    from tvbtoolkit.brian_mf.adex.network import run_adex_network_simulation
+
     t0 = time.time()
     snn = run_adex_network_simulation(
         cells="FS-RS_10",
         seed_value=SEED,
         time_ms=SIM_DURATION_MS,
-        iext_hz=SNN_MF_DRIVE_HZ,    # label only — overridden by trace below
+        iext_hz=SNN_MF_DRIVE_HZ,  # label only — overridden by trace below
         input_hz=0.0,
         external_rate_hz_trace=snn_mf_trace_hz,
         external_rate_dt_ms=DRIVE_TRACE_DT_MS,
@@ -336,7 +386,9 @@ def run_snn_block(b_e_pa: int, *, snn_mf_trace_hz: np.ndarray) -> tuple[dict, fl
     )
     t_snn = time.time() - t0
     t_kept, exc_kept, inh_kept, adapt_kept = _trim_transient_snn(
-        snn.time_ms, snn.rate_exc_hz, snn.rate_inh_hz,
+        snn.time_ms,
+        snn.rate_exc_hz,
+        snn.rate_inh_hz,
         snn.adaptation if snn.adaptation is not None else np.zeros_like(snn.time_ms),
         cut_ms=CUT_TRANSIENT_MS,
     )
@@ -379,26 +431,39 @@ def _shared_zerlaut_overrides(b_e_pa: float, *, baseline_hz: float) -> dict:
     """
     return {
         "b_e": float(b_e_pa),
+        "a_e": 0.0,
+        "a_i": 0.0,
+        "b_i": 0.0,
+        "tau_w_e": 500.0,
+        "tau_w_i": 500.0,
+        "C_m": 200.0,
+        "g_L": 10.0,
+        "Q_e": 1.5,
+        "Q_i": 5.0,
+        "Q_i_e": 5.0,
+        "derivative_scale": 1.0,
         "E_L_e": EL_E_MV,
         "E_L_i": EL_I_MV,
         "tau_e_e": TAU_E_MS,
         "tau_e_i": TAU_I_MS,
+        "tau_i": TAU_I_MS,
         "T": MF_T_MS,
         "N_tot": SNN_NTOT,
         "g": SNN_GEI,
         "p_connect_e": SNN_P_CON,
         "p_connect_i": SNN_P_CON,
-        "external_input_ex_ex": float(baseline_hz) * 1e-3,    # KHz baseline (OU adds fluctuation)
+        "external_input_ex_ex": float(baseline_hz)
+        * 1e-3,  # KHz baseline (OU adds fluctuation)
         "external_input_ex_in": 0.0,
         "external_input_in_ex": float(baseline_hz) * 1e-3,
         "external_input_in_in": 0.0,
         "K_ext_e": 400,
         "K_ext_i": 0,
         "tau_OU": TAU_OU_MS,
-        "weight_noise": 0.0,                            # disable internal-noise contribution to rate
+        "weight_noise": 0.0,  # disable internal-noise contribution to rate
         "P_e": list(P_E_V2),
         "P_i": list(P_I_V2),
-        "initial_condition": WB_INIT_COND,
+        "initial_condition": deepcopy(WB_INIT_COND),
     }
 
 
@@ -417,13 +482,26 @@ def run_mf_block(b_e_pa: int, *, snn_mf_trace_hz: np.ndarray) -> tuple[dict, flo
         simulation_length_ms=SIM_DURATION_MS,
         dt_ms=DT_MS,
         zerlaut_order=2,
-        stochastic_integrator=False,                    # OU is external (deterministic Heun)
+        stochastic_integrator=False,  # OU is external (deterministic Heun)
         coupling_strength=0.0,
+        connectivity_normalization="none",
         monitor_mode="raw",
-        monitor_variables=(0, 1, 2, 3, 4, 5, 6, 7),    # E, I, C_ee, C_ei, C_ii, W_e, W_i, noise
+        monitor_variables=(
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+        ),  # E, I, C_ee, C_ei, C_ii, W_e, W_i, noise
         weights=np.zeros((1, 1), dtype=float),
         tract_lengths=np.zeros((1, 1), dtype=float),
-        parameter_overrides=_shared_zerlaut_overrides(b_e_pa, baseline_hz=SNN_MF_DRIVE_HZ),
+        parameter_overrides={
+            **_shared_zerlaut_overrides(b_e_pa, baseline_hz=SNN_MF_DRIVE_HZ),
+            "parameter_integrator": {"type": "Heun"},
+        },
     )
     with _patched_zerlaut_with_ou(snn_mf_trace_hz):
         result = run_whole_brain_simulation(cfg, seed=SEED)
@@ -434,14 +512,18 @@ def run_mf_block(b_e_pa: int, *, snn_mf_trace_hz: np.ndarray) -> tuple[dict, flo
     t_kept, data_kept = _trim_transient_tvb(_t, _data, CUT_TRANSIENT_MS)
     ve_hz = data_kept[:, 0, 0, 0] * 1e3
     vi_hz = data_kept[:, 1, 0, 0] * 1e3
-    W_pa  = data_kept[:, 5, 0, 0]
+    W_pa = data_kept[:, 5, 0, 0]
     out = {
         "time_ms": t_kept,
         "ve_hz": ve_hz,
         "vi_hz": vi_hz,
-        "W_pa":  W_pa,
+        "W_pa": W_pa,
+        "covariance_khz2": data_kept[:, 2:5, 0, 0],
+        "finite": bool(np.isfinite(_data).all()),
     }
-    print(f"  MF  done in {t_mf:5.1f}s  (ve {ve_hz.mean():.2f} Hz, W {W_pa.mean():.1f} pA)")
+    print(
+        f"  MF  done in {t_mf:5.1f}s  (ve {ve_hz.mean():.2f} Hz, W {W_pa.mean():.1f} pA)"
+    )
     return out, t_mf
 
 
@@ -457,12 +539,16 @@ def run_wb_block(b_e_pa: int, *, wb_trace_hz: np.ndarray) -> tuple[dict, float]:
         simulation_length_ms=SIM_DURATION_MS,
         dt_ms=DT_MS,
         zerlaut_order=2,
-        stochastic_integrator=False,                    # OU is external
+        stochastic_integrator=False,  # OU is external
         coupling_strength=WB_COUPLING_STRENGTH,
+        connectivity_normalization="legacy_column_sum",
         connectivity_zip=DK68_CONNECTIVITY_ZIP,
         monitor_mode="raw",
-        monitor_variables=(0, 1, 5),                    # E, I, W_e
-        parameter_overrides=_shared_zerlaut_overrides(b_e_pa, baseline_hz=WB_DRIVE_HZ),
+        monitor_variables=tuple(range(8)),  # Retain covariance validity evidence too.
+        parameter_overrides={
+            **_shared_zerlaut_overrides(b_e_pa, baseline_hz=WB_DRIVE_HZ),
+            "parameter_integrator": {"type": "Heun"},
+        },
     )
     with _patched_zerlaut_with_ou(wb_trace_hz):
         result = run_whole_brain_simulation(cfg, seed=SEED)
@@ -473,12 +559,14 @@ def run_wb_block(b_e_pa: int, *, wb_trace_hz: np.ndarray) -> tuple[dict, float]:
     t_kept, data_kept = _trim_transient_tvb(_t, _data, CUT_TRANSIENT_MS)
     ve_hz = data_kept[:, 0, :, 0] * 1e3
     vi_hz = data_kept[:, 1, :, 0] * 1e3
-    W_pa  = data_kept[:, 2, :, 0]
+    W_pa = data_kept[:, 5, :, 0]
     out = {
         "time_ms": t_kept,
         "ve_hz": ve_hz,
         "vi_hz": vi_hz,
         "W_pa": W_pa,
+        "covariance_khz2": data_kept[:, 2:5, :, 0],
+        "finite": bool(np.isfinite(_data).all()),
         "region_labels": np.asarray(result.region_labels),
     }
     print(f"  WB  done in {t_wb:5.1f}s  (ve {ve_hz.mean():.2f} Hz)")
@@ -489,6 +577,7 @@ def run_wb_block(b_e_pa: int, *, wb_trace_hz: np.ndarray) -> tuple[dict, float]:
 # Per-b runner with mode flags
 # ---------------------------------------------------------------------------
 
+
 def run_one_b(
     b_e_pa: int,
     *,
@@ -498,9 +587,31 @@ def run_one_b(
     wb_only: bool = False,
 ) -> Path:
     out_path = PER_B_DIR / f"b_{b_e_pa}.pkl"
+    PER_B_DIR.mkdir(parents=True, exist_ok=True)
+    # Parameter-aware caching prevents old TF fits being labelled as new ones.
+    protocol = dict(
+        model=_shared_zerlaut_overrides(b_e_pa, baseline_hz=WB_DRIVE_HZ),
+        duration_ms=SIM_DURATION_MS,
+        cut_ms=CUT_TRANSIENT_MS,
+        dt_ms=DT_MS,
+        G=WB_COUPLING_STRENGTH,
+        seed=SEED,
+        OU_sigma=PAPER_SIGMA_HZ,
+        snn_drive=SNN_MF_DRIVE_HZ,
+        coefficient_order="Toolkit",
+        script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    )
+    signature = hashlib.sha256(
+        json.dumps(protocol, sort_keys=True).encode()
+    ).hexdigest()
     partial = snn_only or mf_only or wb_only
 
     if out_path.exists() and not force and not partial:
+        with out_path.open("rb") as handle:
+            if pickle.load(handle).get("protocol_signature") != signature:
+                raise ValueError(
+                    "Cached fit/protocol differs; use a fresh results directory"
+                )
         print(f"[b={b_e_pa:>3d}] already present at {out_path.name} — skipping")
         return out_path
     if partial and not out_path.exists():
@@ -512,14 +623,23 @@ def run_one_b(
     if partial:
         with open(out_path, "rb") as f:
             existing = pickle.load(f)
+        if existing.get("protocol_signature") != signature:
+            raise ValueError(
+                "Cannot combine model scales from different fits/protocols"
+            )
         print(f"[b={b_e_pa:>3d}] updating existing pickle ({list(existing.keys())})")
 
     timings = existing.get("timings_s", {})
-    payload = existing if partial else {
-        "b_e_pa": b_e_pa,
-        "sim_duration_ms": SIM_DURATION_MS,
-        "cut_transient_ms": CUT_TRANSIENT_MS,
-    }
+    payload = (
+        existing
+        if partial
+        else {
+            "b_e_pa": b_e_pa,
+            "sim_duration_ms": SIM_DURATION_MS,
+            "cut_transient_ms": CUT_TRANSIENT_MS,
+        }
+    )
+    payload.update(protocol_signature=signature, protocol=protocol)
 
     # Two OU traces per b — same noise realization, different baselines
     # (paper Fig 4a: SNN+MF at 0.4 Hz, WB at 0.315 Hz).
@@ -552,18 +672,92 @@ def run_one_b(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--b", type=int, default=None, help="Run a single b_e value (pA).")
-    parser.add_argument("--all", action="store_true", help="Run the full sweep sequentially.")
+    parser.add_argument(
+        "--b", type=int, default=None, help="Run a single b_e value (pA)."
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="Run the full sweep sequentially."
+    )
+    parser.add_argument(
+        "--stimulation",
+        action="store_true",
+        help="Run separate matched-control pulse experiments (no SNN rerun).",
+    )
+    parser.add_argument(
+        "--stim-output", type=Path, default=REPO_ROOT / "results/b_sweep_stimulation"
+    )
+    parser.add_argument(
+        "--stim-amplitudes",
+        type=float,
+        nargs="+",
+        default=[0.1, 0.35, 0.55, 1.0],
+        help="Direct E-derivative drive, Hz/ms, NOT Hz.",
+    )
+    parser.add_argument(
+        "--stim-durations",
+        type=float,
+        nargs="+",
+        default=[5.0, 10.0, 50.0],
+        help="Square-pulse duration in ms.",
+    )
+    parser.add_argument(
+        "--stim-couplings", type=float, nargs="+", default=[0.05, 0.15, 0.3, 0.5]
+    )
+    parser.add_argument(
+        "--stim-scale",
+        choices=["wb", "mf"],
+        default="wb",
+        help="DK68 whole brain or an isolated recurrent mean-field node",
+    )
+    parser.add_argument(
+        "--stim-derivative-scale",
+        type=float,
+        choices=[1.0, 1000.0],
+        default=1000.0,
+        help="1: native derivatives; 1000: experimental J/1000 and H/1e6 attenuation",
+    )
+    parser.add_argument(
+        "--stim-order",
+        type=int,
+        choices=[1, 2],
+        default=2,
+        help="Compare first order against corrected second order; scaling only applies to order 2",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite full pickle.")
-    parser.add_argument("--snn-only", action="store_true",
-                        help="Re-run SNN only; load existing pickle, replace snn block.")
-    parser.add_argument("--mf-only", action="store_true",
-                        help="Re-run single-region MF only; keep existing snn+wb blocks.")
-    parser.add_argument("--wb-only", action="store_true",
-                        help="Re-run whole-brain only; keep existing snn+mf blocks.")
+    parser.add_argument(
+        "--snn-only",
+        action="store_true",
+        help="Re-run SNN only; load existing pickle, replace snn block.",
+    )
+    parser.add_argument(
+        "--mf-only",
+        action="store_true",
+        help="Re-run single-region MF only; keep existing snn+wb blocks.",
+    )
+    parser.add_argument(
+        "--wb-only",
+        action="store_true",
+        help="Re-run whole-brain only; keep existing snn+mf blocks.",
+    )
     args = parser.parse_args()
+
+    if args.stimulation:
+        from b_sweep_stimulation import run_stimulation_grid
+
+        run_stimulation_grid(
+            args.stim_output,
+            b_values=[args.b] if args.b is not None else B_VALUES_PA,
+            amplitudes=args.stim_amplitudes,
+            durations=args.stim_durations,
+            couplings=args.stim_couplings,
+            scale=args.stim_scale,
+            derivative_scale=args.stim_derivative_scale,
+            order=args.stim_order,
+        )
+        return 0
 
     if args.b is not None and args.all:
         parser.error("Use --b OR --all, not both.")
