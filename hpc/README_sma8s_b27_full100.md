@@ -135,10 +135,15 @@ sbatch hpc/submit_sma8s_b27_cutoff.sh
 ```
 
 The output `exploratory_cutoff_hybrid/` contains `cutoff_summary.json`,
-`subject_classification.csv`, `cross_validation_folds.csv`, and the PDF/PNG
-figure `baseline_cutoff`. The cutoff maximises Youden's J within this cohort;
-the report also gives the 0.28, 0.31 and 0.44 *descriptive* crossings and
-the threshold that would retain at least Casarotto's 36/38 MCS sensitivity.
+`subject_classification.csv`, `cross_validation_folds.csv`,
+`uws_occupancy_crossings.csv`, and the PDF/PNG figure `baseline_cutoff`.
+The cutoff maximises Youden's J within the **zero-occupancy** MCS/UWS cohort;
+the report also gives the 0.28, 0.31 and 0.44 *descriptive* comparisons.
+The selected cutoff is then held fixed at every occupancy. The crossing table
+distinguishes UWS subjects who begin below it and subsequently cross it from
+those already above it at zero occupancy. It does not use Casarotto's 36/38
+MCS sensitivity to select a threshold; that figure was an independent
+validation result in the empirical study, not its cutoff-selection rule.
 Repeated five-fold **subject-level** cross-validation and subject bootstrap
 quantify instability/optimism. Private clinical annotations are not shipped
 with this public code. After transferring a pseudonymised CSV with

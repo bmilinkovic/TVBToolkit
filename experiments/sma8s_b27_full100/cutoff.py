@@ -25,7 +25,7 @@ import numpy as np
 
 GROUPS = ("CNT", "EMCS", "MCS", "UWS")
 COLORS = {"CNT": "#9a83c7", "EMCS": "#b578c4", "MCS": "#9554a8", "UWS": "#593878"}
-EMPIRICAL_MCS_SENSITIVITY = 36 / 38
+OCCUPANCIES = (0.0, 0.25, 0.5, 0.766)  # Frozen SMA8s protocol; keep this script directly executable.
 
 
 def read_baseline(path: Path) -> dict[str, list[dict]]:
@@ -82,14 +82,6 @@ def choose_youden(mcs: np.ndarray, uws: np.ndarray) -> dict:
                                       -r["threshold"]))
 
 
-def closest_empirical_sensitivity(mcs: np.ndarray, uws: np.ndarray) -> dict:
-    """Highest threshold retaining at least 36/38 MCS sensitivity."""
-    candidates = np.unique(mcs)
-    eligible = [classify(mcs, uws, t) for t in candidates
-                if np.mean(mcs >= t) >= EMPIRICAL_MCS_SENSITIVITY]
-    return max(eligible, key=lambda r: r["threshold"])
-
-
 def auc(mcs: np.ndarray, uws: np.ndarray) -> float:
     comparison = mcs[:, None] - uws[None, :]
     return float(np.mean(comparison > 0) + 0.5 * np.mean(comparison == 0))
@@ -137,6 +129,45 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
+def uws_occupancy_crossings(path: Path, threshold: float) -> tuple[list[dict], dict]:
+    """Apply the zero-occupancy cutoff unchanged to every UWS subject and dose.
+
+    A crossing means below cutoff at occupancy zero and at/above it later.
+    Subjects already above cutoff at zero are counted separately.
+    """
+    values: dict[str, dict[float, float]] = {}
+    with path.open(newline="") as stream:
+        for row in csv.DictReader(stream):
+            if row["group"] != "UWS":
+                continue
+            subject, occupancy = row["subject"], float(row["occupancy"])
+            by_occupancy = values.setdefault(subject, {})
+            if occupancy in by_occupancy:
+                raise ValueError(f"Duplicate UWS score: {subject}, {occupancy}")
+            by_occupancy[occupancy] = float(row["mean_pci_lz"])
+    expected = set(OCCUPANCIES)
+    if not values or any(set(scores) != expected for scores in values.values()):
+        raise ValueError("Every UWS subject needs one score at every occupancy")
+    rows = []
+    counts = {}
+    for occupancy in OCCUPANCIES:
+        for subject, scores in sorted(values.items()):
+            baseline, current = scores[0.0], scores[occupancy]
+            if not np.isfinite(baseline) or not np.isfinite(current):
+                raise ValueError(f"Nonfinite UWS PCI: {subject}")
+            rows.append(dict(subject=subject, occupancy=occupancy,
+                             baseline_pci=baseline, pci=current,
+                             delta_pci=current - baseline,
+                             above_baseline_cutoff=bool(current >= threshold),
+                             crosses_from_below=bool(baseline < threshold <= current)))
+        at_dose = [row for row in rows if row["occupancy"] == occupancy]
+        counts[str(occupancy)] = dict(
+            above_cutoff=sum(row["above_baseline_cutoff"] for row in at_dose),
+            crossed_from_below=sum(row["crosses_from_below"] for row in at_dose),
+            n_uws=len(at_dose))
+    return rows, counts
+
+
 def plot_groups(by_group: dict, threshold: float, output: Path) -> None:
     fig, ax = plt.subplots(figsize=(8.0, 5.6))
     values = [[row["pci"] for row in by_group[group]] for group in GROUPS]
@@ -181,9 +212,9 @@ def main() -> None:
     mcs = np.array([row["pci"] for row in by_group["MCS"]])
     uws = np.array([row["pci"] for row in by_group["UWS"]])
     selected = choose_youden(mcs, uws)
-    benchmark = closest_empirical_sensitivity(mcs, uws)
     cv = cross_validate(mcs, uws, args.cv_repeats, args.seed)
     boot = bootstrap_threshold(mcs, uws, args.bootstrap_draws, args.seed + 1)
+    crossings, crossing_counts = uws_occupancy_crossings(args.input_csv, selected["threshold"])
     args.output.mkdir(parents=True, exist_ok=True)
     summary = dict(definition="Exploratory discrimination of behavioural MCS vs UWS, not a consciousness threshold",
                    source_csv_sha256=hashlib.sha256(args.input_csv.read_bytes()).hexdigest(),
@@ -193,8 +224,8 @@ def main() -> None:
                    selected_youden=selected, auc_mcs_vs_uws=auc(mcs, uws),
                    cross_validation={k: v for k, v in cv.items() if k != "folds"},
                    bootstrap_threshold=boot,
-                   sensitivity_matched_to_empirical_mcs_36_of_38=benchmark,
                    reference_cutoffs={str(t): classify(mcs, uws, t) for t in (.28, .31, .44)},
+                   uws_occupancy_counts_at_fixed_baseline_cutoff=crossing_counts,
                    group_counts_at_selected={group: sum(row["pci"] >= selected["threshold"]
                                                         for row in rows)
                                              for group, rows in by_group.items()})
@@ -211,6 +242,7 @@ def main() -> None:
             caution="Heterogeneous evidence of potential covert consciousness, not ground-truth labels")
     (args.output / "cutoff_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     write_csv(args.output / "cross_validation_folds.csv", cv["folds"])
+    write_csv(args.output / "uws_occupancy_crossings.csv", crossings)
     subjects = [dict(group=group, subject=row["subject"],
                      pci=row["pci"], b_pa=float(row["b_pa"]),
                      high_rate_trials=int(row["high_rate_trials"]),
